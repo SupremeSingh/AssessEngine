@@ -16,6 +16,13 @@ MIN_WORDS = 50
 
 def export(run):
     run = Path(run)
+    generation_manifest = run / 'generation.json'
+    if generation_manifest.exists():
+        config = json.loads(generation_manifest.read_text())['config']
+        if config.get('prompt_mode') == 'sas_question_context_and_length_v2':
+            coverage = run / 'generation_coverage.json'
+            if not coverage.exists() or not json.loads(coverage.read_text())['all_quotas_met']:
+                raise ValueError('AI quotas are not met; finish generation before exporting or scoring.')
     output = run / 'snapjudge'
     inputs = output / 'documents'
     questions, answers = run / 'questions.jsonl', run / 'answers.jsonl'
@@ -140,7 +147,7 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     for name in ('export', 'run', 'report'):
         command = commands.add_parser(name)
-        command.add_argument('--run', default='runs/sas-baseline')
+        command.add_argument('--run', default='runs/sas-balanced')
         if name == 'run':
             command.add_argument('--key-file', default='~/.config/assessengine/snapjudge.key')
             command.add_argument('--concurrency', type=int, choices=range(1, 11), default=3)

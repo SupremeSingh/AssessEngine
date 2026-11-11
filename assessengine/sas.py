@@ -72,8 +72,10 @@ def prepare_records(rows, humans_per_question=50, seed=42):
     return questions, coverage
 
 
-def response_prompt(question, min_words=50, max_words=100):
+def response_prompt(question, min_words=80, max_words=120):
     if min_words < 50 or max_words < min_words:
         raise ValueError('Use 50 <= min_words <= max_words')
     return (question['question'] + '\n\n'
-            f'Write your final answer in {min_words}–{max_words} words.')
+            f'Write your final answer in {min_words}–{max_words} words. '
+            'The final answer itself must contain at least 50 words, excluding any reasoning. '
+            'Explain the requested points in complete sentences without repetition or filler.')

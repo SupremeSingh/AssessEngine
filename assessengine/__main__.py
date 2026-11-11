@@ -11,6 +11,7 @@ from pathlib import Path
 from .core import (append_jsonl, digest, read_jsonl,
                    split_response, write_json, write_jsonl)
 
+from .generation import attempt_seed, next_attempt, qualifies, quota_report
 from .sas import DATASET, REVISION, SETS, prepare_records, response_prompt
 MODEL = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-14B'
 LOG = logging.getLogger('assessengine')
@@ -79,18 +80,22 @@ def generate(args):
     config = {'model': MODEL, 'revision': sha, 'questions_sha256': digest(source),
               'samples': args.samples, 'seed': args.seed, 'precision': args.precision,
               'max_new_tokens': args.max_new_tokens, 'temperature': 0.6, 'top_p': 0.95,
-              'prompt_mode': 'sas_question_context_and_length_v1', 'top_k': 0,
-              'answer_min_words': args.answer_min_words, 'answer_max_words': args.answer_max_words}
+              'prompt_mode': 'sas_question_context_and_length_v2', 'top_k': 0,
+              'answer_min_words': args.answer_min_words, 'answer_max_words': args.answer_max_words,
+              'max_attempts_per_slot': args.max_attempts, 'required_final_words': 50}
     manifest(manifest_path, config)
     # Persist the exact human/question inputs alongside generated responses.
     write_jsonl(run / 'questions.jsonl', questions)
     destination = run / 'answers.jsonl'
     existing = read_jsonl(destination) if destination.exists() else []
-    completed = {row['id'] for row in existing}
-    work = [(q, sample) for q in questions for sample in range(args.samples)
-            if f"{q['question_id']}:{sample}" not in completed]
-    if not work:
-        LOG.info('All responses already generated.')
+    pending = any(next_attempt([r for r in existing if r['question_id'] == q['question_id']],
+                               args.samples, args.max_attempts) is not None for q in questions)
+    if not pending:
+        summary = quota_report(questions, existing, args.samples, args.max_attempts)
+        write_json(run / 'generation_coverage.json', summary)
+        if not summary['all_quotas_met']:
+            raise RuntimeError('Retry budget exhausted; see generation_coverage.json. Do not score yet.')
+        LOG.info('All answer quotas already met.')
         return
     tokenizer = AutoTokenizer.from_pretrained(MODEL, revision=sha, trust_remote_code=False)
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
@@ -102,30 +107,43 @@ def generate(args):
     model = AutoModelForCausalLM.from_pretrained(MODEL, revision=sha, **options).eval()
     eos = model.generation_config.eos_token_id
     eos_ids = {eos} if isinstance(eos, int) else set(eos or [])
-    for index, (question, sample) in enumerate(work):
-        # A per-response seed makes interruption/resumption independent of RNG history.
-        seed = args.seed + int(question['question_id'][:8], 16) + sample
-        set_seed(seed % (2**32))
-        messages = [{'role': 'user', 'content': response_prompt(
-            question, args.answer_min_words, args.answer_max_words)}]
-        rendered = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(rendered, add_special_tokens=False, return_tensors='pt').to('cuda:0')
-        started = time.monotonic()
-        with torch.inference_mode():
-            output = model.generate(**inputs, do_sample=True, temperature=0.6, top_p=0.95,
-                                    max_new_tokens=args.max_new_tokens, top_k=0,
-                                    pad_token_id=tokenizer.eos_token_id)
-        tokens = output[0, inputs['input_ids'].shape[1]:].tolist()
-        raw = tokenizer.decode(tokens, skip_special_tokens=True)
-        parsed = split_response(raw, bool(tokens and tokens[-1] in eos_ids))
-        row = {'id': f"{question['question_id']}:{sample}",
-               'question_id': question['question_id'], 'sample': sample, 'seed': seed,
-               'prompt': rendered, 'raw_response': raw, **parsed,
-               'gpu': torch.cuda.get_device_name(0),
-               'generated_tokens': len(tokens), 'seconds': round(time.monotonic() - started, 3)}
-        append_jsonl(destination, row)
-        LOG.info('%d/%d %s: %s (%d tokens, %.1fs)', index + 1, len(work),
-                 row['id'], row['status'], len(tokens), row['seconds'])
+    for question in questions:
+        group = [r for r in existing if r['question_id'] == question['question_id']]
+        while (task := next_attempt(group, args.samples, args.max_attempts)) is not None:
+            sample, attempt = task
+            seed = attempt_seed(args.seed, question['question_id'], sample, attempt)
+            set_seed(seed)
+            messages = [{'role': 'user', 'content': response_prompt(
+                question, args.answer_min_words, args.answer_max_words)}]
+            rendered = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = tokenizer(rendered, add_special_tokens=False, return_tensors='pt').to('cuda:0')
+            started = time.monotonic()
+            with torch.inference_mode():
+                output = model.generate(**inputs, do_sample=True, temperature=0.6, top_p=0.95,
+                                        max_new_tokens=args.max_new_tokens, top_k=0,
+                                        pad_token_id=tokenizer.eos_token_id)
+            tokens = output[0, inputs['input_ids'].shape[1]:].tolist()
+            raw = tokenizer.decode(tokens, skip_special_tokens=True)
+            parsed = split_response(raw, bool(tokens and tokens[-1] in eos_ids))
+            row = {'id': f"{question['question_id']}:{sample}:{attempt}",
+                   'question_id': question['question_id'], 'sample': sample,
+                   'attempt': attempt, 'seed': seed, 'prompt': rendered,
+                   'raw_response': raw, **parsed, 'gpu': torch.cuda.get_device_name(0),
+                   'generated_tokens': len(tokens), 'seconds': round(time.monotonic() - started, 3)}
+            row['words'] = len(row['answer'].split())
+            row['accepted'] = qualifies(row)
+            append_jsonl(destination, row)
+            group.append(row)
+            existing.append(row)
+            summary = quota_report(questions, existing, args.samples, args.max_attempts)
+            write_json(run / 'generation_coverage.json', summary)
+            LOG.info('%s slot %d/%d attempt %d/%d: %s, %d words, accepted=%s (%.1fs)',
+                     question['question_id'], sample + 1, args.samples, attempt,
+                     args.max_attempts, row['status'], row['words'], row['accepted'], row['seconds'])
+    summary = quota_report(questions, existing, args.samples, args.max_attempts)
+    write_json(run / 'generation_coverage.json', summary)
+    if not summary['all_quotas_met']:
+        raise RuntimeError('Retry budget exhausted; see generation_coverage.json. Do not score yet.')
 
 
 def main():
@@ -139,16 +157,17 @@ def main():
     prep.add_argument('--revision', help='Override the pinned Hugging Face dataset commit')
     gen = commands.add_parser('generate', help='Generate resumable DeepSeek answers on one GPU')
     gen.add_argument('--data', default='data/sas')
-    gen.add_argument('--run', default='runs/sas-baseline')
-    gen.add_argument('--samples', type=int, default=10)
+    gen.add_argument('--run', default='runs/sas-balanced')
+    gen.add_argument('--samples', type=int, default=50, help='Qualifying answers per question')
+    gen.add_argument('--max-attempts', type=int, default=5, help='Attempt limit per answer slot')
     gen.add_argument('--seed', type=int, default=42)
     gen.add_argument('--max-new-tokens', type=int, default=4096)
-    gen.add_argument('--answer-min-words', type=int, default=50)
-    gen.add_argument('--answer-max-words', type=int, default=100)
+    gen.add_argument('--answer-min-words', type=int, default=80)
+    gen.add_argument('--answer-max-words', type=int, default=120)
     gen.add_argument('--precision', choices=['4bit', '16bit'], default='4bit')
     gen.add_argument('--revision', help='Hugging Face model commit')
     args = parser.parse_args()
-    for field in ('samples', 'max_new_tokens', 'humans_per_question'):
+    for field in ('samples', 'max_new_tokens', 'humans_per_question', 'max_attempts'):
         if hasattr(args, field) and getattr(args, field) < 1:
             parser.error(f'--{field.replace("_", "-")} must be positive')
     if args.command == 'generate' and not 50 <= args.answer_min_words <= args.answer_max_words:

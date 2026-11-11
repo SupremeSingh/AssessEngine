@@ -36,11 +36,11 @@ source .venv/bin/activate
 # Dependency installation and model inference happen on the compute node.
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
-mkdir -p "${RUN_DIR:-runs/sas-baseline}"
-python -m pip freeze > "${RUN_DIR:-runs/sas-baseline}/environment.txt"
+mkdir -p "${RUN_DIR:-runs/sas-balanced}"
+python -m pip freeze > "${RUN_DIR:-runs/sas-balanced}/environment.txt"
 python -m assessengine prepare --humans-per-question "${HUMANS_PER_QUESTION:-50}" --data "${DATA_DIR:-data/sas}"
 python -m assessengine generate --data "${DATA_DIR:-data/sas}" \
-    --run "${RUN_DIR:-runs/sas-baseline}" --samples "${SAMPLES:-10}" \
+    --run "${RUN_DIR:-runs/sas-balanced}" --samples "${SAMPLES:-50}" --max-attempts "${MAX_ATTEMPTS:-5}" \
     --max-new-tokens "${MAX_NEW_TOKENS:-4096}" --precision "${PRECISION:-4bit}"
 # Export only: SnapJudge submissions run separately with your private key.
-python -m assessengine.snapjudge export --run "${RUN_DIR:-runs/sas-baseline}"
+python -m assessengine.snapjudge export --run "${RUN_DIR:-runs/sas-balanced}"

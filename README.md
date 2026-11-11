@@ -9,11 +9,14 @@ No paid model API is used. Gemini optimization is a later stage.
 - **Five prompts:** SAS essay sets **1, 2, 5, 6, 10** (science and biology).
 - **250 human answers:** 50 per prompt, sampled with seed 42 from exact-text
   deduplicated responses containing at least 50 whitespace-separated words.
-- **50 AI attempts:** 10 per prompt, using 4-bit DeepSeek 14B on one A5000.
-- **50–100 word final-answer instruction** for every AI prompt. This requests
+- **250 qualifying AI answers:** 50 per prompt, using 4-bit DeepSeek 14B on one A5000.
+  Each answer slot has up to five independent attempts; completed final answers
+  qualify only when they contain at least 50 whitespace-separated words.
+- **80–120 word final-answer instruction** for every AI prompt. This requests
   comparable length; it does not enforce length or change human answers.
 - **4,096 generation tokens**, including reasoning. Failed, capped, and short
-  answers are retained and excluded transparently; they are not selectively replaced.
+  attempts are retained. Short/incomplete attempts are retried up to the limit.
+  Generation fails and scoring is blocked if any quota remains unmet.
 - **SnapJudge** runs separately, with `--no-save`, three simultaneous submissions,
   no GPU, and your private SnapJudge key file.
 
@@ -21,7 +24,9 @@ Verified locally: real pinned dataset preparation produced all five prompts and
 250 eligible human responses; tests cover rubric removal, context preservation,
 length filtering, deterministic sampling, duplicate removal, and score association.
 GPU generation on SAS and live SnapJudge scoring must still run on the cluster.
-Old Mohler data and results remain untouched in their old directories.
+Old Mohler results and the first SAS run (`runs/sas-baseline`) remain untouched.
+The new length instruction is applied consistently to this separate run; old AI
+answers are not mixed into it. The human sample is reused from `data/sas`.
 
 ## Run on Duke
 
@@ -72,10 +77,22 @@ workflow. Do not run overlapping jobs writing the same output directory.
 The scoring job uses CPU partition `compsci` and the existing `.venv`.
 It loads no detector weights locally; detection is through the remote service.
 
+Before submitting scoring, inspect quota completion:
+
+```bash
+cat runs/sas-balanced/generation_coverage.json
+cat runs/sas-balanced/snapjudge/coverage.json
+```
+
+`all_quotas_met` must be true and SnapJudge coverage should include
+`human:eligible: 250` and `ai:eligible: 250`. Extra AI exclusions are retained
+failed attempts, not missing accepted answers. The word requirement applies to
+final answers only, excluding reasoning; answer content is never padded in code.
+
 Then read **the new SAS report**:
 
 ```bash
-cat runs/sas-baseline/snapjudge/report.json
+cat runs/sas-balanced/snapjudge/report.json
 ```
 
 The old `runs/baseline/report.json` is the historical Mohler/Desklib report.
@@ -151,21 +168,24 @@ and correctness before attributing score differences to authorship.
 - `data/sas/dataset.json`: pinned revision and sampling configuration.
 - `data/sas/coverage.json`: pool, eligibility, deduplication and sampling counts.
 - `data/sas/questions.jsonl`: cleaned prompts and raw sampled human answers.
-- `runs/sas-baseline/generation.json`: settings, revision, input hash and environment.
-- `runs/sas-baseline/answers.jsonl`: rendered prompts, raw output, reasoning,
+- `runs/sas-balanced/generation.json`: settings, revision, input hash and environment.
+- `runs/sas-balanced/generation_coverage.json`: accepted/rejected counts and missing quota per prompt.
+- `runs/sas-balanced/answers.jsonl`: all attempts, rendered prompts, raw output, reasoning,
   final answers, completion status, per-response seeds, GPU, tokens and timing.
-- `runs/sas-baseline/snapjudge/coverage.json`: actual submission eligibility.
-- `runs/sas-baseline/snapjudge/index.jsonl`: opaque file names mapped to answer IDs.
-- `runs/sas-baseline/snapjudge/results.csv`, `results_json/`: official raw results.
-- `runs/sas-baseline/snapjudge/scores.jsonl`: results joined to local authorship.
-- `runs/sas-baseline/snapjudge/report.json`: scores, verdicts, coverage and exclusions.
+- `runs/sas-balanced/snapjudge/coverage.json`: actual submission eligibility.
+- `runs/sas-balanced/snapjudge/index.jsonl`: opaque file names mapped to answer IDs.
+- `runs/sas-balanced/snapjudge/results.csv`, `results_json/`: official raw results.
+- `runs/sas-balanced/snapjudge/scores.jsonl`: results joined to local authorship.
+- `runs/sas-balanced/snapjudge/report.json`: scores, verdicts, coverage and exclusions.
 
 Generation flushes each attempt to disk. Re-submit the same command to resume;
-completed attempts are not regenerated. Changed settings are rejected; use new
+accepted slots are not regenerated, and saved rejected attempts count toward
+the five-attempt budget. Each retry has a distinct deterministic seed. Changed settings are rejected; use new
 run/data directories for new configurations. SnapJudge's client also resumes
 finished documents. Do not edit exported files or inputs under a running job.
 All attempts are preserved; short or incomplete outputs are never scored as
-completed answers. GPU/library differences can prevent bitwise reproducibility.
+completed answers. Retrying until eligible conditions the AI sample on length and
+completion; report rejection rates alongside detector performance. GPU/library differences can prevent bitwise reproducibility.
 Back up output separately: Duke xtmp is not backed up. Data, outputs, caches,
 virtual environments, and key files are gitignored.
 
@@ -178,7 +198,7 @@ RUN_DIR=runs/sas-smoke sbatch scripts/score.sbatch
 ```
 
 Submit the second command after the first succeeds. Other generation overrides:
-`MAX_NEW_TOKENS` and `PRECISION` (`4bit` or `16bit`; 16-bit requires a 48 GB card).
+`MAX_ATTEMPTS`, `MAX_NEW_TOKENS` and `PRECISION` (`4bit` or `16bit`; 16-bit requires a 48 GB card).
 For direct steps inside the appropriate compute allocation:
 
 ```bash

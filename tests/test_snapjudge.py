@@ -46,6 +46,17 @@ class SnapJudgeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Inputs changed'):
             self.exported()
 
+    def test_quota_run_cannot_score_before_finishing(self):
+        (self.run / 'generation.json').write_text(json.dumps({
+            'config': {'prompt_mode': 'sas_question_context_and_length_v2'}}))
+        with self.assertRaisesRegex(ValueError, 'quotas are not met'):
+            self.exported()
+        (self.run / 'generation_coverage.json').write_text(json.dumps({'all_quotas_met': False}))
+        with self.assertRaisesRegex(ValueError, 'quotas are not met'):
+            self.exported()
+        (self.run / 'generation_coverage.json').write_text(json.dumps({'all_quotas_met': True}))
+        self.exported()
+
     def test_join_uses_filename_and_reports_missing_results(self):
         output = self.exported()
         rows = read_jsonl(output / 'index.jsonl')
