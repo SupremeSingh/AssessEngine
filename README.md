@@ -1,203 +1,229 @@
 # AssessEngine
 
-A small baseline comparing authentic CS student answers with answers from
-`deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`, scored with
-`desklib/ai-text-detector-v1.01`. No paid APIs or training. Gemini modifications
-are a later experiment, not part of this baseline.
+A reproducible **ASAP-SAS science/biology pilot**: authentic student answers,
+DeepSeek-R1-Distill-Qwen-14B, and SnapJudge via its official batch client.
+No paid model API is used. Gemini optimization is a later stage.
 
-## Cluster quick start
+## What this version runs
 
-Push this repository locally, then on Duke:
+- **Five prompts:** SAS essay sets **1, 2, 5, 6, 10** (science and biology).
+- **250 human answers:** 50 per prompt, sampled with seed 42 from exact-text
+  deduplicated responses containing at least 50 whitespace-separated words.
+- **50 AI attempts:** 10 per prompt, using 4-bit DeepSeek 14B on one A5000.
+- **50–100 word final-answer instruction** for every AI prompt. This requests
+  comparable length; it does not enforce length or change human answers.
+- **4,096 generation tokens**, including reasoning. Failed, capped, and short
+  answers are retained and excluded transparently; they are not selectively replaced.
+- **SnapJudge** runs separately, with `--no-save`, three simultaneous submissions,
+  no GPU, and your private SnapJudge key file.
+
+Verified locally: real pinned dataset preparation produced all five prompts and
+250 eligible human responses; tests cover rubric removal, context preservation,
+length filtering, deterministic sampling, duplicate removal, and score association.
+GPU generation on SAS and live SnapJudge scoring must still run on the cluster.
+Old Mohler data and results remain untouched in their old directories.
+
+## Run on Duke
+
+Push these local changes, then on the cluster:
 
 ```bash
 cd /usr/xtmp/ms785/AssessEngine
 git pull
-python3 --version
-sinfo -o '%P %G %a'
+module load python/3.12.8
+export PYTHON_BIN="$(command -v python3)"
+export HF_HOME="$PWD/.cache/huggingface"
 mkdir -p logs
 sbatch scripts/baseline.sbatch
 ```
 
-Requirements: Linux, NVIDIA GPU, CUDA-compatible driver for PyTorch 2.6 (CUDA
-12.4 wheels), Python **3.10–3.12** with `venv`, internet access from the compute
-node for the first install/download, and approximately **60 GB free disk**.
-If `python3` is not a supported version, load a suitable Duke Python module
-(`module avail`) or export `PYTHON_BIN` to an installed interpreter before submission.
-Do not run inference on the login node.
+The script now explicitly requests `compsci-gpu`, one `a5000`, four CPU cores,
+48 GB host memory, and a **four-hour limit**. It creates/reuses `.venv`, installs
+pinned requirements, prepares the dataset, generates responses, and exports the
+SnapJudge input files. It **does not submit anything to SnapJudge**.
+Use `sbatch --gres=gpu:a6000:1 scripts/baseline.sbatch` to request an A6000 instead.
+Queue time depends on Duke. First download needs internet access; approximately
+60 GB disk accommodates full checkpoint weights and dependencies. 4-bit loading
+still downloads the original full checkpoint. Python 3.10–3.12 and a compatible
+NVIDIA driver for the pinned PyTorch CUDA wheels are required.
 
-**GPU selection:** the script requests one GPU on the default partition. Use
-an **A5000 24 GB, A6000 48 GB, or V100 32 GB**. It deliberately stops on smaller
-GPUs. If the default partition does not offer GPUs, or offers older cards, use
-the partition and GPU type shown by `sinfo`:
-
-```bash
-# Replace PARTITION and TYPE with exact values from sinfo; these are placeholders.
-sbatch --partition=PARTITION --gres=gpu:TYPE:1 scripts/baseline.sbatch
-```
-
-Duke's actual partition/type names and any required account cannot be inferred
-from the hardware description. Command-line Slurm flags override script defaults.
-No cluster login, GPU allocation, installation, or inference has been verified
-from the local development machine.
-
-The job installs the pinned dependencies in `.venv`, then prepares **10 questions**,
-generates **3 responses per question**, scores humans and completed AI answers,
-and writes a report. It uses NF4 4-bit loading, temperature 0.6, top-p 0.95,
-and a 2,048-token cap including reasoning. Quantization happens while loading
-the official checkpoint: the initial download still includes the full weights
-(approximately 30 GB). Dependencies/downloads are cached for later jobs.
-Queue time depends on Duke; the first job includes installation and downloads.
-The two-hour request is a limit, not a runtime promise.
-
-Monitor:
+Follow the job (replace JOB_ID):
 
 ```bash
-squeue -u "$USER"
-# Substitute the job ID printed by sbatch.
+squeue -j JOB_ID
 tail -f logs/assess-baseline-JOB_ID.out
 ```
 
-First run a smaller smoke test if desired:
+After successful generation, with your SnapJudge key already saved:
 
 ```bash
-QUESTIONS=2 SAMPLES=1 DATA_DIR=data/smoke RUN_DIR=runs/smoke sbatch scripts/baseline.sbatch
-```
-
-Then submit the default command above for the 10-question pilot. Each dataset
-selection and generation configuration needs its own data/run directories.
-Use just one writer per run directory; do not submit overlapping jobs to it.
-
-## Outputs
-
-- `data/mohler/dataset.json`: dataset revision and selection configuration.
-- `data/mohler/questions.jsonl`: exact questions, raw student responses, grades, IDs.
-- `runs/baseline/questions.jsonl`: copy of the selected inputs.
-- `runs/baseline/generation.json`: model revision, input hash, generation settings, environment.
-- `runs/baseline/answers.jsonl`: rendered prompts, raw outputs, reasoning, final answers,
-  completion status, seeds, GPU, tokens, and elapsed generation time.
-- `runs/baseline/detector.json`: detector revision and input hashes.
-- `runs/baseline/scores.jsonl` and `scores.csv`: per-answer scores, authorship,
-  word/token counts, grades, and detector truncation flags.
-- `runs/baseline/report.json`: exploratory AUROC, false-positive fraction for humans,
-  detection fraction for AI at threshold 0.5, lengths, and excluded generations.
-- `runs/baseline/environment.txt`: installed package versions.
-
-Completed generations are appended and flushed immediately. Resubmit the same
-command to resume after a normal interruption. An incompatible configuration is
-rejected rather than mixed into an existing run. Do not edit JSONL files while
-jobs are running. A partially written last JSONL line after a hard filesystem
-failure produces an explicit parse error rather than silent data loss.
-Outputs, caches, and environments are gitignored. **Back up results separately:**
-the cluster's xtmp storage is not backed up.
-
-## Recover from a detector download failure
-
-If generation finished but Desklib failed with HTTP 429, keep all run files.
-Hugging Face may rate-limit a shared cluster IP; authenticate using a free
-account and a read token from https://huggingface.co/settings/tokens.
-Run login interactively on the cluster, using the same cache location as the jobs:
-
-```bash
-cd /usr/xtmp/ms785/AssessEngine
-module load python/3.12.8
-source .venv/bin/activate
-export HF_HOME="$PWD/.cache/huggingface"
-huggingface-cli login
-```
-
-Paste the token only into the CLI's hidden prompt, never into source files,
-chat, or shell command arguments. Choose **N** when asked to add it as a Git
-credential. The login is persisted under HF_HOME and automatically used by
-Hugging Face downloads. No paid subscription is needed. An existing HF_TOKEN
-environment variable takes precedence over the saved login.
-
-Then finish scoring on a CPU compute node, without repeating generation:
-
-```bash
-mkdir -p logs
 sbatch scripts/score.sbatch
 ```
 
-Follow `logs/assess-score-JOB_ID.out`, then inspect
-`runs/baseline/report.json`. No regeneration or manifest deletion is needed.
-The scoring job uses the already installed environment; it does not reinstall
-packages. CPU scoring is slower than GPU scoring but requires no GPU allocation.
-Authentication does not guarantee immediate removal of a rate limit; if 429
-persists, wait for the limit to reset before resubmitting this scoring-only job.
+Or submit the pair together, making scoring depend on successful generation:
 
-## Separate stages
+```bash
+GEN_JOB=$(sbatch --parsable scripts/baseline.sbatch)
+sbatch --dependency=afterok:"$GEN_JOB" scripts/score.sbatch
+```
 
-Inside an appropriate compute allocation, after installing the requirements:
+Do not submit both the standalone generation command and this pair: choose one
+workflow. Do not run overlapping jobs writing the same output directory.
+The scoring job uses CPU partition `compsci` and the existing `.venv`.
+It loads no detector weights locally; detection is through the remote service.
+
+Then read **the new SAS report**:
+
+```bash
+cat runs/sas-baseline/snapjudge/report.json
+```
+
+The old `runs/baseline/report.json` is the historical Mohler/Desklib report.
+
+## SnapJudge key (once)
+
+Get your separately issued **sjk_** key from the SnapJudge team. Hugging Face
+credentials do not work. The guide does not document self-service key issuance.
+Save it privately on the cluster; never paste it in chat or command arguments:
 
 ```bash
 source .venv/bin/activate
-export HF_HOME="$PWD/.cache/huggingface"
-python -m assessengine prepare --questions 10
-python -m assessengine generate --samples 3
-python -m assessengine score
-python -m assessengine report
+python - <<'PY'
+from pathlib import Path
+import getpass
+p = Path.home() / '.config/assessengine/snapjudge.key'
+p.parent.mkdir(parents=True, exist_ok=True)
+key = getpass.getpass('SnapJudge key: ').strip()
+if not key.startswith('sjk_'):
+    raise SystemExit('Expected a SnapJudge sjk_ key')
+p.touch(mode=0o600, exist_ok=True)
+p.chmod(0o600)
+p.write_text(key + '\n')
+PY
 ```
 
-Generation requires CUDA; scoring can also run on CPU. Each stage exposes
-`--help`. Model/dataset revisions resolve to commit hashes and are reused on
-resume. You can explicitly supply `--revision COMMIT` to prepare/generate/score.
-Per-response seeds support resumption; exact bitwise reproduction across GPU
-architectures/library versions is not guaranteed.
+`score.sbatch` passes the **file path**, not its contents. Override with the
+`SNAPJUDGE_KEY_FILE` environment variable if needed. The official batch client
+is downloaded once and cached; its URL and SHA-256 are logged. The service's
+`--no-save` option requests analysis without retaining the submissions.
+If Hugging Face rate-limits checkpoint/dataset downloads, log in via
+`huggingface-cli login` after activating `.venv` and setting HF_HOME as above.
+Do not add a Git credential helper just for model downloads.
 
-For 16-bit generation on a 48 GB A6000, use a new run:
+## Dataset preparation and prompt integrity
+
+Source: `nlpatunt/D_ASAP-SAS`, pinned to commit
+`f97ad6415c94c763b901423b72f78f1fbf46d630`. It repackages the authentic,
+pre-ChatGPT ASAP-SAS student-response data; score labels are removed by the
+mirror. We do not synthesize, correct, pad, or concatenate student answers.
+
+The mirror's **prompt fields include rubrics in sets 5 and 6**. Preparation
+removes the explicit rubric section and the set-5 item title. Sets 1, 2, and 10
+retain their experiment procedures and data tables from the mirror's textual
+transcription. The original field hash, source URL, and optional image URL are
+logged. Set 10 includes an image URL; generation uses the mirror's textual
+representation, not a vision model. We inspected the text, but have not
+independently validated it against every original assessment image. No rubric,
+human response, grading label, or reference answer is given to DeepSeek.
+Changed or inconsistent rubric boundaries fail preparation.
+
+| Set | Topic | Unique eligible responses available | Selected |
+|---|---|---:|---:|
+| 1 | Replicating an experiment | 696 | 50 |
+| 2 | Plastic stretchability investigation | 849 | 50 |
+| 5 | Protein synthesis | 194 | 50 |
+| 6 | Cell-membrane transport | 206 | 50 |
+| 10 | Lid color, temperature, and doghouse paint | 506 | 50 |
+
+We pool the mirror's train/validation/test partitions for this descriptive pilot;
+original split and response IDs are retained. These are **answer-level splits**,
+not held-out questions. Before Gemini optimization, reserve prompt families for
+independent evaluation. With only five science prompts, broad transfer claims
+are not supported. This is science education, not CS education.
+
+Selecting only long human answers changes the population. The added length
+instruction applies to AI answers only and is a documented generation condition,
+not evidence that it matches the original student setting. Compare actual lengths
+and correctness before attributing score differences to authorship.
+
+## Outputs and resuming
+
+- `data/sas/dataset.json`: pinned revision and sampling configuration.
+- `data/sas/coverage.json`: pool, eligibility, deduplication and sampling counts.
+- `data/sas/questions.jsonl`: cleaned prompts and raw sampled human answers.
+- `runs/sas-baseline/generation.json`: settings, revision, input hash and environment.
+- `runs/sas-baseline/answers.jsonl`: rendered prompts, raw output, reasoning,
+  final answers, completion status, per-response seeds, GPU, tokens and timing.
+- `runs/sas-baseline/snapjudge/coverage.json`: actual submission eligibility.
+- `runs/sas-baseline/snapjudge/index.jsonl`: opaque file names mapped to answer IDs.
+- `runs/sas-baseline/snapjudge/results.csv`, `results_json/`: official raw results.
+- `runs/sas-baseline/snapjudge/scores.jsonl`: results joined to local authorship.
+- `runs/sas-baseline/snapjudge/report.json`: scores, verdicts, coverage and exclusions.
+
+Generation flushes each attempt to disk. Re-submit the same command to resume;
+completed attempts are not regenerated. Changed settings are rejected; use new
+run/data directories for new configurations. SnapJudge's client also resumes
+finished documents. Do not edit exported files or inputs under a running job.
+All attempts are preserved; short or incomplete outputs are never scored as
+completed answers. GPU/library differences can prevent bitwise reproducibility.
+Back up output separately: Duke xtmp is not backed up. Data, outputs, caches,
+virtual environments, and key files are gitignored.
+
+Overrides for a separate smaller run:
 
 ```bash
-PRECISION=16bit RUN_DIR=runs/baseline-16bit sbatch scripts/baseline.sbatch
+HUMANS_PER_QUESTION=5 SAMPLES=1 DATA_DIR=data/sas-smoke RUN_DIR=runs/sas-smoke \
+    sbatch scripts/baseline.sbatch
+RUN_DIR=runs/sas-smoke sbatch scripts/score.sbatch
 ```
 
-If many generations reach the cap, inspect their status and use a **new run**
-with a larger limit, for example:
+Submit the second command after the first succeeds. Other generation overrides:
+`MAX_NEW_TOKENS` and `PRECISION` (`4bit` or `16bit`; 16-bit requires a 48 GB card).
+For direct steps inside the appropriate compute allocation:
 
 ```bash
-MAX_NEW_TOKENS=4096 RUN_DIR=runs/baseline-4096 sbatch scripts/baseline.sbatch
+python -m assessengine prepare
+python -m assessengine generate
+python -m assessengine.snapjudge export
+python -m assessengine.snapjudge run
 ```
 
-## Method and limitations
+## Diagnostics and tests (local CPU)
 
-- Uses the dataset's **raw/open_ended** subset; student text is not corrected or
-  rewritten. Selection is deterministic with seed 42. Identical question wordings
-  are grouped, retaining original source IDs and responses. No train/test split
-  is claimed at this stage; reserve question families before optimization.
-- DeepSeek receives the **exact question only**, through its official chat template.
-  It receives no student answers, reference answers, or system instructions.
-  Some questions may need missing diagrams/programs/context; inspect selected
-  questions before interpreting results. There is no automatic validity claim.
-- Reasoning is stored separately. Only outputs with a closing `</think>` boundary,
-  a nonempty final answer, and an EOS are scored. Capped and malformed outputs
-  are counted and excluded, without replacing failed samples selectively.
-- Desklib uses its documented masked mean-pooling/single-logit architecture,
-  implemented locally; checkpoint key mismatches fail. Remote repository code
-  is not executed. Scores are detector outputs, not verified authorship probabilities.
-- Questions are short and human/AI answer lengths and correctness may differ.
-  Report word counts and review these confounds. No human text is padded to meet
-  detector lengths. Desklib truncation is explicit at 768 tokens.
-- This is a pooled descriptive baseline with unequal class counts and correlated
-  answers within questions, not a statistical significance test or proof of
-  educational validity. Public questions may have appeared in model training.
-- Prompt optimization and matched-human validation are intentionally future stages.
-  Original human answers cannot stand in for humans answering modified questions.
+No models or detector calls:
 
-## Sources and attribution
+```bash
+python3 -m venv .venv-diagnostic
+source .venv-diagnostic/bin/activate
+python -m pip install -r requirements-diagnostic.txt
+HF_HOME="$PWD/.cache/huggingface" python -m assessengine.diagnose
+python -m unittest discover -s tests -v
+```
 
-- [MohlerASAG dataset card](https://huggingface.co/datasets/nkazi/MohlerASAG)
-  (card lists CC BY 4.0). Cite **Michael Mohler, Razvan Bunescu, and Rada Mihalcea
-  (2011), Learning to Grade Short Answer Questions using Semantic Similarity
-  Measures and Dependency Graph Alignments**, [ACL paper](https://aclanthology.org/P11-1076/),
-  and credit the Hugging Face conversion by Nazmul Kazi. Dataset content is kept
-  outside Git; consult original source terms before redistributing it.
+The diagnostic now defaults to **all ten SAS prompts**, removing exact within-prompt
+text duplicates and recording the dataset revision. It writes
+`data/diagnostics/sas/report.json` and `questions.csv`. Use `--dataset mohler` for
+historical Mohler analysis. Word counts use whitespace; SnapJudge is authoritative
+about its own eligibility. `bash -n scripts/baseline.sbatch` and
+`bash -n scripts/score.sbatch` check shell syntax.
+
+## Interpreting results
+
+SnapJudge requires at least 50 words and was calibrated on research papers.
+Its `ai_generated_share` is the fraction of windows classified AI-generated,
+**not an authorship probability**. AI-polished windows count as human-written in
+the website verdict. Short answers have few windows, so scores may be coarse.
+No Desklib threshold is applied. Missing/errors/exclusions are shown separately.
+This is a detector baseline, not proof of genuine human–LLM divergence or cheating.
+Human responses to modified prompts are still needed for the eventual research claim.
+
+## Sources
+
+- [ASAP-SAS original competition](https://www.kaggle.com/competitions/asap-sas)
+- [S-GRADES Hugging Face conversion](https://huggingface.co/datasets/nlpatunt/D_ASAP-SAS)
+- [Prompt/source documents](https://huggingface.co/datasets/nlpatunt/dataset_rubrics)
 - [DeepSeek model card](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B)
-  (MIT; distilled from Qwen, not the full DeepSeek-R1).
-- [Desklib model card](https://huggingface.co/desklib/ai-text-detector-v1.01)
-  (MIT; architecture and scoring procedure).
+- [SnapJudge official batch guide and client](https://nlplab.cs.duke.edu/snapjudge/batch/)
 
-## Local checks (no model downloads)
-
-```bash
-python3 -m unittest discover -s tests -v
-bash -n scripts/baseline.sbatch
-```
+Consult original dataset terms before redistribution. Hugging Face availability
+alone is not a redistribution license.

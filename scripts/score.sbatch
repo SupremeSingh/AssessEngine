@@ -18,5 +18,5 @@ if [[ ! -x .venv/bin/python ]]; then
     echo 'Missing .venv; install requirements in a compute allocation first.' >&2
     exit 1
 fi
-.venv/bin/python -m assessengine score --run "${RUN_DIR:-runs/baseline}"
-.venv/bin/python -m assessengine report --run "${RUN_DIR:-runs/baseline}"
+.venv/bin/python -m assessengine.snapjudge run --run "${RUN_DIR:-runs/sas-baseline}" \
+    --key-file "${SNAPJUDGE_KEY_FILE:-$HOME/.config/assessengine/snapjudge.key}"

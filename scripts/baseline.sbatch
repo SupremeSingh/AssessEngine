@@ -1,9 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=assess-baseline
-#SBATCH --gres=gpu:1
+#SBATCH --partition=compsci-gpu
+#SBATCH --gres=gpu:a5000:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --output=logs/%x-%j.out
 
 set -euo pipefail
@@ -35,12 +36,11 @@ source .venv/bin/activate
 # Dependency installation and model inference happen on the compute node.
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
-mkdir -p "${RUN_DIR:-runs/baseline}"
-python -m pip freeze > "${RUN_DIR:-runs/baseline}/environment.txt"
-python -m assessengine prepare --questions "${QUESTIONS:-10}" --data "${DATA_DIR:-data/mohler}"
-python -m assessengine generate --data "${DATA_DIR:-data/mohler}" \
-    --run "${RUN_DIR:-runs/baseline}" --samples "${SAMPLES:-3}" \
-    --max-new-tokens "${MAX_NEW_TOKENS:-2048}" --precision "${PRECISION:-4bit}"
-# Separate processes release DeepSeek GPU memory before loading Desklib.
-python -m assessengine score --run "${RUN_DIR:-runs/baseline}"
-python -m assessengine report --run "${RUN_DIR:-runs/baseline}"
+mkdir -p "${RUN_DIR:-runs/sas-baseline}"
+python -m pip freeze > "${RUN_DIR:-runs/sas-baseline}/environment.txt"
+python -m assessengine prepare --humans-per-question "${HUMANS_PER_QUESTION:-50}" --data "${DATA_DIR:-data/sas}"
+python -m assessengine generate --data "${DATA_DIR:-data/sas}" \
+    --run "${RUN_DIR:-runs/sas-baseline}" --samples "${SAMPLES:-10}" \
+    --max-new-tokens "${MAX_NEW_TOKENS:-4096}" --precision "${PRECISION:-4bit}"
+# Export only: SnapJudge submissions run separately with your private key.
+python -m assessengine.snapjudge export --run "${RUN_DIR:-runs/sas-baseline}"

@@ -1,4 +1,5 @@
 .venv/
+.venv-diagnostic/
 __pycache__/
 *.pyc
 .cache/
@@ -6,3 +7,5 @@ data/
 runs/
 logs/
 .env
+*.key
+key.txt

@@ -1,0 +1,157 @@
+"""Export saved answers and run the official SnapJudge batch client."""
+import argparse
+from collections import Counter
+import csv
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+from .core import digest, read_jsonl, write_json, write_jsonl
+
+CLIENT_URL = 'https://nlplab.cs.duke.edu/snapjudge/batch/snapjudge_batch.py'
+MIN_WORDS = 50
+
+
+def export(run):
+    run = Path(run)
+    output = run / 'snapjudge'
+    inputs = output / 'documents'
+    questions, answers = run / 'questions.jsonl', run / 'answers.jsonl'
+    sources = {'questions_sha256': digest(questions), 'answers_sha256': digest(answers),
+               'min_words': MIN_WORDS, 'format_version': 1}
+    manifest = output / 'export.json'
+    if manifest.exists() and json.loads(manifest.read_text()) != sources:
+        raise ValueError('Inputs changed since export; use a new run directory to avoid stale results.')
+    records = []
+    for question in read_jsonl(questions):
+        for human in question['humans']:
+            records.append({'id': human['id'], 'question_id': question['question_id'],
+                            'authorship': 'human', 'text': human['student_answer'],
+                            'generation_status': None})
+    for answer in read_jsonl(answers):
+        records.append({'id': answer['id'], 'question_id': answer['question_id'],
+                        'authorship': 'ai', 'text': answer['answer'],
+                        'generation_status': answer['status']})
+    inputs.mkdir(parents=True, exist_ok=True)
+    for row in records:
+        row['words'] = len(row['text'].split())
+        reason = None
+        if row['authorship'] == 'ai' and row['generation_status'] != 'complete':
+            reason = 'incomplete_generation'
+        elif row['words'] < MIN_WORDS:
+            reason = 'under_50_words'
+        row['excluded_reason'], row['file'] = reason, None
+        if reason is None:
+            name = hashlib.sha256(f"{row['authorship']}:{row['id']}".encode()).hexdigest() + '.txt'
+            row['file'] = name
+            path = inputs / name
+            if path.exists() and path.read_text(encoding='utf-8') != row['text']:
+                raise ValueError(f'Exported document changed: {path}')
+            path.write_text(row['text'], encoding='utf-8')
+    expected = {r['file'] for r in records if r['file']}
+    if {p.name for p in inputs.iterdir()} != expected:
+        raise ValueError('Unexpected files in SnapJudge documents folder; use a clean run.')
+    write_json(manifest, sources)
+    write_jsonl(output / 'index.jsonl', records)
+    counts = Counter(f"{r['authorship']}:{r['excluded_reason'] or 'eligible'}" for r in records)
+    write_json(output / 'coverage.json', dict(counts))
+    print(json.dumps(dict(counts), indent=2))
+    return output
+
+
+def report(run):
+    output = Path(run) / 'snapjudge'
+    index = read_jsonl(output / 'index.jsonl')
+    with (output / 'results.csv').open(newline='', encoding='utf-8') as stream:
+        results = list(csv.DictReader(stream))
+    by_file = {}
+    expected = {row['file'] for row in index if row['file']}
+    for result in results:
+        name = result['file']
+        if name not in expected or name in by_file:
+            raise ValueError(f'Unexpected or duplicate result: {name}')
+        by_file[name] = result
+    joined = [{**row, 'snapjudge': by_file.get(row['file'])} for row in index]
+    write_jsonl(output / 'scores.jsonl', joined)
+    summary = {'detector': 'SnapJudge', 'min_words': MIN_WORDS,
+               'score_definition': 'Fraction of windows classified AI-generated, not authorship probability.',
+               'warning': 'Eligible answers only. Length filtering changes the sample; '
+                          'short human answers are excluded. Calibrated on research papers; '
+                          'this is not evidence of true human-LLM divergence.'}
+    for label in ('human', 'ai'):
+        group = [row for row in joined if row['authorship'] == label]
+        successful = []
+        for row in group:
+            result = row['snapjudge']
+            if result and not result.get('error'):
+                share = float(result['ai_generated_share'])
+                if not 0 <= share <= 1:
+                    raise ValueError('Invalid SnapJudge generated-window share')
+                successful.append((result, share))
+        summary[label] = {
+            'total': len(group), 'eligible': sum(not r['excluded_reason'] for r in group),
+            'excluded': dict(Counter(r['excluded_reason'] for r in group if r['excluded_reason'])),
+            'scored': len(successful),
+            'errors': sum(bool(r['snapjudge'] and r['snapjudge'].get('error')) for r in group),
+            'missing_results': sum(not r['excluded_reason'] and r['snapjudge'] is None for r in group),
+            'verdicts': dict(Counter(r['verdict'] for r, _ in successful)),
+            'mean_generated_window_share': (sum(s for _, s in successful) / len(successful)
+                                             if successful else None)}
+    write_json(output / 'report.json', summary)
+    print(json.dumps(summary, indent=2))
+
+
+def run_batch(args):
+    import requests
+    key = Path(args.key_file).expanduser().resolve()
+    if not key.is_file():
+        raise ValueError('Create your SnapJudge key file first; see README. Do not paste the key in chat.')
+    if not key.read_text().strip().startswith('sjk_'):
+        raise ValueError('The key file must contain the separately issued sjk_ key.')
+    output = export(args.run)
+    if not any((output / 'documents').glob('*.txt')):
+        raise ValueError('No eligible answers of at least 50 words; see coverage.json.')
+    client = Path('.cache/snapjudge/snapjudge_batch.py').resolve()
+    if not client.exists():
+        response = requests.get(CLIENT_URL, timeout=(15, 60))
+        response.raise_for_status()
+        source = response.content
+        compile(source, CLIENT_URL, 'exec')
+        client.parent.mkdir(parents=True, exist_ok=True)
+        temporary = client.with_suffix('.tmp')
+        temporary.write_bytes(source)
+        temporary.replace(client)
+    write_json(output / 'client.json', {'source': CLIENT_URL, 'sha256': digest(client),
+                                       'save_submissions': False, 'concurrency': args.concurrency})
+    result = subprocess.run([sys.executable, str(client), '--key', str(key),
+                             '--input', str(output / 'documents'),
+                             '--out', str(output / 'results.csv'),
+                             '--json-dir', str(output / 'results_json'),
+                             '--no-save', '--concurrency', str(args.concurrency)])
+    if (output / 'results.csv').exists():
+        report(args.run)
+    return result.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    for name in ('export', 'run', 'report'):
+        command = commands.add_parser(name)
+        command.add_argument('--run', default='runs/sas-baseline')
+        if name == 'run':
+            command.add_argument('--key-file', default='~/.config/assessengine/snapjudge.key')
+            command.add_argument('--concurrency', type=int, choices=range(1, 11), default=3)
+    args = parser.parse_args()
+    if args.command == 'export':
+        export(args.run)
+    elif args.command == 'report':
+        report(args.run)
+    else:
+        sys.exit(run_batch(args))
+
+
+if __name__ == '__main__':
+    main()
