@@ -90,6 +90,41 @@ failure produces an explicit parse error rather than silent data loss.
 Outputs, caches, and environments are gitignored. **Back up results separately:**
 the cluster's xtmp storage is not backed up.
 
+## Recover from a detector download failure
+
+If generation finished but Desklib failed with HTTP 429, keep all run files.
+Hugging Face may rate-limit a shared cluster IP; authenticate using a free
+account and a read token from https://huggingface.co/settings/tokens.
+Run login interactively on the cluster, using the same cache location as the jobs:
+
+```bash
+cd /usr/xtmp/ms785/AssessEngine
+module load python/3.12.8
+source .venv/bin/activate
+export HF_HOME="$PWD/.cache/huggingface"
+huggingface-cli login
+```
+
+Paste the token only into the CLI's hidden prompt, never into source files,
+chat, or shell command arguments. Choose **N** when asked to add it as a Git
+credential. The login is persisted under HF_HOME and automatically used by
+Hugging Face downloads. No paid subscription is needed. An existing HF_TOKEN
+environment variable takes precedence over the saved login.
+
+Then finish scoring on a CPU compute node, without repeating generation:
+
+```bash
+mkdir -p logs
+sbatch scripts/score.sbatch
+```
+
+Follow `logs/assess-score-JOB_ID.out`, then inspect
+`runs/baseline/report.json`. No regeneration or manifest deletion is needed.
+The scoring job uses the already installed environment; it does not reinstall
+packages. CPU scoring is slower than GPU scoring but requires no GPU allocation.
+Authentication does not guarantee immediate removal of a rate limit; if 429
+persists, wait for the limit to reset before resubmitting this scoring-only job.
+
 ## Separate stages
 
 Inside an appropriate compute allocation, after installing the requirements:
