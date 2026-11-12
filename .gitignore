@@ -7,5 +7,6 @@ data/
 runs/
 logs/
 .env
+.env.pangram
 *.key
 key.txt

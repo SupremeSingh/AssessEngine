@@ -1,40 +1,171 @@
 # AssessEngine
 
-A reproducible **ASAP-SAS science/biology pilot**: authentic student answers,
-DeepSeek-R1-Distill-Qwen-14B, and SnapJudge via its official batch client.
-No paid model API is used. Gemini optimization is a later stage.
+ASAP-SAS science/biology questions, authentic student answers, fresh DeepSeek
+responses, and **Pangram realtime detection**. Pangram replaces SnapJudge in the
+default scoring workflow. The ongoing generation does not need changing.
 
-## What this version runs
+## Current experiment
 
-- **Five prompts:** SAS essay sets **1, 2, 5, 6, 10** (science and biology).
-- **250 human answers:** 50 per prompt, sampled with seed 42 from exact-text
-  deduplicated responses containing at least 50 whitespace-separated words.
-- **250 qualifying AI answers:** 50 per prompt, using 4-bit DeepSeek 14B on one A5000.
-  Each answer slot has up to five independent attempts; completed final answers
-  qualify only when they contain at least 50 whitespace-separated words.
-- **80–120 word final-answer instruction** for every AI prompt. This requests
-  comparable length; it does not enforce length or change human answers.
-- **4,096 generation tokens**, including reasoning. Failed, capped, and short
-  attempts are retained. Short/incomplete attempts are retried up to the limit.
-  Generation fails and scoring is blocked if any quota remains unmet.
-- **SnapJudge** runs separately, with `--no-save`, three simultaneous submissions,
-  no GPU, and your private SnapJudge key file.
+Five prompts (SAS sets **1, 2, 5, 6, 10**), **250 human answers** (50 per prompt),
+and **250 qualifying DeepSeek-R1-Distill-Qwen-14B answers**. Raw human answers are
+sampled deterministically, exact-text-deduplicated, and at least 50 words. AI
+prompts request 80–120 words; each answer slot has at most five independent
+attempts. Only completed final answers of at least 50 whitespace-counted words
+qualify. All attempts, reasoning, seeds, timing and rejection counts are saved.
+By default scoring requires every quota to be met. The explicit partial-run
+workflow below can instead use balanced saved answers without further generation.
 
-Verified locally: real pinned dataset preparation produced all five prompts and
-250 eligible human responses; tests cover rubric removal, context preservation,
-length filtering, deterministic sampling, duplicate removal, and score association.
-GPU generation on SAS and live SnapJudge scoring must still run on the cluster.
-Old Mohler results and the first SAS run (`runs/sas-baseline`) remain untouched.
-The new length instruction is applied consistently to this separate run; old AI
-answers are not mixed into it. The human sample is reused from `data/sas`.
+## Score the saved answers after the timeout (current workflow)
 
-## Run on Duke
+Generation job 13550364 stopped at the time limit with **221 qualifying AI answers**:
+50 on each of sets 1, 2, 5, 6 and 21 on set 10. No more generation is needed.
+Use **221 human answers**, matching counts within each prompt, for **442 documents**.
+This is count matching within a question, not individual student/AI answer pairing.
+The first N humans in the existing deterministic sampled order are used; selection
+does not depend on detector results. All source data, rejected attempts, and the
+29 unused human answers remain intact.
 
-Push these local changes, then on the cluster:
+After pushing the local changes, run on the cluster:
 
 ```bash
 cd /usr/xtmp/ms785/AssessEngine
 git pull
+module load python/3.12.8
+source .venv/bin/activate
+python -m assessengine.pangram plan --allow-partial
+```
+
+Check `documents: 442`, `by_authorship: {human: 221, ai: 221}`,
+the per-question counts, and `within_budget: true`. The preview spends no credits.
+Set the Pangram key using the section below, then:
+
+```bash
+ALLOW_PARTIAL=1 sbatch scripts/score.sbatch
+```
+
+This does not run DeepSeek. Selection IDs/hashes are recorded in
+`runs/sas-balanced/pangram/selection.jsonl`. The selection policy is included in
+the run fingerprint; it cannot be silently changed after scoring begins.
+The 1,500-credit estimated spending ceiling and 1,500-credit reserve still apply.
+Do not resume generation or edit the source files during this scoring experiment.
+Rebuilding this partial report requires
+`python -m assessengine.pangram report --allow-partial`.
+
+## After the running generation finishes
+
+Wait for the current job to finish **before pulling workflow changes**. Push the
+local changes to Git, then on Duke:
+
+```bash
+cd /usr/xtmp/ms785/AssessEngine
+git pull
+module load python/3.12.8
+source .venv/bin/activate
+cat runs/sas-balanced/generation_coverage.json
+python -m assessengine.pangram plan
+```
+
+`all_quotas_met` must be true. **`plan` makes no API calls and spends no credits.**
+It writes `runs/sas-balanced/pangram/plan.json` with counts, estimated credits,
+cache reuse, and budget checks. Confirm `within_budget: true` before scoring.
+
+## Add the API key
+
+```bash
+cp -n config/pangram.env.example .env.pangram
+chmod 600 .env.pangram
+nano .env.pangram
+```
+
+Fill the private copy at the **Add Key Here** comment:
+
+```bash
+# Add Key Here
+export PANGRAM_API_KEY="your-key"
+```
+
+Never put a real key in the committed template, chat, command arguments, or job
+logs. `.env.pangram` is gitignored and automatically sourced by the scoring job.
+An exported `PANGRAM_API_KEY` also works. A website subscription does not necessarily
+supply API credits; live API balance/model checks must succeed.
+
+Then submit one CPU job:
+
+```bash
+mkdir -p logs
+sbatch scripts/score.sbatch
+```
+
+It uses `requests` in the existing `.venv`, sends texts **one at a time** with
+`model="pangram-4"`, `public_dashboard_link=false`, and polls saved task IDs.
+It sends answer text only: no labels, questions, rubrics, or rejected attempts.
+No GPU, new SDK, or further generation is needed. No paid calls have been made
+from development; tests use mocked API responses.
+
+```bash
+tail -f logs/assess-score-JOB_ID.out
+cat runs/sas-balanced/pangram/report.json
+```
+
+Direct scoring inside a compute allocation:
+
+```bash
+source .env.pangram
+python -m assessengine.pangram run
+```
+
+## Budget: 3,000 credits
+
+Defaults cap the baseline at **1,500 estimated credits**, reserving **1,500**.
+Each unique text estimates `ceil(whitespace_words / 100)` credits, minimum one,
+at $0.05 per credit. Thus 80 words estimate one credit and 120 estimate two.
+Provider word counting and billing are authoritative; these are conservative
+rounding estimates, not a guaranteed account-wide spending cap.
+
+Before every new paid POST, the free `/balance` endpoint must show sufficient
+USD to preserve the reserve ($75 at the documented rate), plus a 10% cushion
+on the next estimated charge. An unexpected balance representation stops the
+job; do not disable the guard before checking your account's API credits.
+
+The shared `.cache/pangram/ledger.json` records estimated reservations, task IDs,
+and complete results. Identical text/model hashes reuse results across runs,
+including repeated human texts. Preserve and back up this ledger: deleting or
+changing its path resets local spending history. A lock prevents simultaneous
+jobs sharing the ledger. Other machines, manual activity, provider billing
+changes, and delayed balances remain outside this local policy; use Pangram
+account controls for authoritative limits and avoid concurrent account use.
+
+No automatic paid retries. A failed task stops scoring. A timeout after POST
+can still mean a billed task: a durable `submitting` record without a task ID
+blocks automatic resubmission. Reconcile it with Pangram before changing it.
+Polling failures/timeouts resume the saved task ID; completed tasks are reused.
+Re-submit the same scoring command to resume after a polling interruption.
+
+Budget overrides are explicit: `--max-credits`, `--total-credits`, and
+`--reserve-credits`. Inspect the preview before changing any. Bulk would be
+cheaper but is intentionally not used in this sequential pilot.
+
+## Outputs
+
+Under `runs/sas-balanced/pangram/`:
+
+- `plan.json`: counts, credit estimates, reservations, budget checks.
+- `selection.jsonl`: selected answer IDs, authorship, word counts and content hashes.
+- `inputs.json`: model and exact input file hashes.
+- `scores.jsonl`: answer/question IDs, authorship, text, task IDs, state, full raw results.
+- `scores.csv`: classifications, fractions, actual model versions, and metadata.
+- `report.json`: completed/failed counts, verdicts, mean fractions by authorship,
+  and returned version counts. Rebuild with `python -m assessengine.pangram report`.
+
+Raw responses retain segments/windows when returned. `fraction_ai`,
+`fraction_ai_assisted`, and `fraction_human` describe portions of text, not
+probabilities of authorship. AI assistance stays separate. `pangram-4` can serve
+different minor versions; actual returned versions are recorded. Historical
+SnapJudge/Desklib results are preserved and never mixed into Pangram outputs.
+
+## New generation jobs and timeout recovery
+
+```bash
 module load python/3.12.8
 export PYTHON_BIN="$(command -v python3)"
 export HF_HOME="$PWD/.cache/huggingface"
@@ -42,175 +173,40 @@ mkdir -p logs
 sbatch scripts/baseline.sbatch
 ```
 
-The script now explicitly requests `compsci-gpu`, one `a5000`, four CPU cores,
-48 GB host memory, and a **four-hour limit**. It creates/reuses `.venv`, installs
-pinned requirements, prepares the dataset, generates responses, and exports the
-SnapJudge input files. It **does not submit anything to SnapJudge**.
-Use `sbatch --gres=gpu:a6000:1 scripts/baseline.sbatch` to request an A6000 instead.
-Queue time depends on Duke. First download needs internet access; approximately
-60 GB disk accommodates full checkpoint weights and dependencies. 4-bit loading
-still downloads the original full checkpoint. Python 3.10–3.12 and a compatible
-NVIDIA driver for the pinned PyTorch CUDA wheels are required.
+One A5000, four CPUs, 48 GB host memory, four-hour limit. After generation, only
+an **offline Pangram plan** runs; the job never spends detector credits. Resume
+after a timeout with the same command, never while another generation is active.
+Use `--gres=gpu:a6000:1` for an A6000. Python 3.10–3.12, a compatible CUDA driver,
+internet on first install, and about 60 GB disk are required. Full model weights
+are downloaded even for 4-bit loading. Hugging Face login may be needed for rate limits.
 
-Follow the job (replace JOB_ID):
+Defaults: `data/sas`, `runs/sas-balanced`. Old `runs/sas-baseline`/Mohler results
+are untouched. Changed generation configurations are rejected on resume.
+`DATA_DIR`, `RUN_DIR`, `HUMANS_PER_QUESTION`, `SAMPLES`, `MAX_ATTEMPTS`,
+`MAX_NEW_TOKENS`, and `PRECISION` configure separate runs. `RUN_DIR` also selects
+another scoring run. Accepted slots are not regenerated; rejected attempts
+count against the retry budget. GPU/library differences can affect reproducibility.
 
-```bash
-squeue -j JOB_ID
-tail -f logs/assess-baseline-JOB_ID.out
-```
+## Dataset integrity and interpretation
 
-After successful generation, with your SnapJudge key already saved:
+The authentic pre-ChatGPT ASAP-SAS mirror is pinned at
+`nlpatunt/D_ASAP-SAS`, revision `f97ad6415c94c763b901423b72f78f1fbf46d630`.
+It removes grades; we do not use grades or supply human answers to DeepSeek.
+Sets 5 and 6 contain rubrics in the prompt field: these are removed at explicit
+boundaries, failing on unexpected structure. Sets 1, 2, and 10 retain the mirror's
+procedures/tables. Source URLs, hashes and optional image URLs are saved. Set 10
+uses the mirror's text transcription, not vision; not every original image has
+been independently checked. Eligible pools are 696, 849, 194, 206, 506 respectively.
 
-```bash
-sbatch scripts/score.sbatch
-```
+We pool answer-level source splits for this descriptive pilot, retaining IDs/splits.
+This does not create held-out question families. Reserve prompt families before
+Gemini optimization. Five science prompts cannot establish broad CS transfer.
+Selecting long humans, adding AI-only length instructions, and retrying short AI
+answers condition the sampled distributions. Report rejection rates, actual
+lengths and correctness alongside detector performance. Modified prompts still
+need newly collected human answers to establish true human–LLM divergence.
 
-Or submit the pair together, making scoring depend on successful generation:
-
-```bash
-GEN_JOB=$(sbatch --parsable scripts/baseline.sbatch)
-sbatch --dependency=afterok:"$GEN_JOB" scripts/score.sbatch
-```
-
-Do not submit both the standalone generation command and this pair: choose one
-workflow. Do not run overlapping jobs writing the same output directory.
-The scoring job uses CPU partition `compsci` and the existing `.venv`.
-It loads no detector weights locally; detection is through the remote service.
-
-Before submitting scoring, inspect quota completion:
-
-```bash
-cat runs/sas-balanced/generation_coverage.json
-cat runs/sas-balanced/snapjudge/coverage.json
-```
-
-`all_quotas_met` must be true and SnapJudge coverage should include
-`human:eligible: 250` and `ai:eligible: 250`. Extra AI exclusions are retained
-failed attempts, not missing accepted answers. The word requirement applies to
-final answers only, excluding reasoning; answer content is never padded in code.
-
-Then read **the new SAS report**:
-
-```bash
-cat runs/sas-balanced/snapjudge/report.json
-```
-
-The old `runs/baseline/report.json` is the historical Mohler/Desklib report.
-
-## SnapJudge key (once)
-
-Get your separately issued **sjk_** key from the SnapJudge team. Hugging Face
-credentials do not work. The guide does not document self-service key issuance.
-Save it privately on the cluster; never paste it in chat or command arguments:
-
-```bash
-source .venv/bin/activate
-python - <<'PY'
-from pathlib import Path
-import getpass
-p = Path.home() / '.config/assessengine/snapjudge.key'
-p.parent.mkdir(parents=True, exist_ok=True)
-key = getpass.getpass('SnapJudge key: ').strip()
-if not key.startswith('sjk_'):
-    raise SystemExit('Expected a SnapJudge sjk_ key')
-p.touch(mode=0o600, exist_ok=True)
-p.chmod(0o600)
-p.write_text(key + '\n')
-PY
-```
-
-`score.sbatch` passes the **file path**, not its contents. Override with the
-`SNAPJUDGE_KEY_FILE` environment variable if needed. The official batch client
-is downloaded once and cached; its URL and SHA-256 are logged. The service's
-`--no-save` option requests analysis without retaining the submissions.
-If Hugging Face rate-limits checkpoint/dataset downloads, log in via
-`huggingface-cli login` after activating `.venv` and setting HF_HOME as above.
-Do not add a Git credential helper just for model downloads.
-
-## Dataset preparation and prompt integrity
-
-Source: `nlpatunt/D_ASAP-SAS`, pinned to commit
-`f97ad6415c94c763b901423b72f78f1fbf46d630`. It repackages the authentic,
-pre-ChatGPT ASAP-SAS student-response data; score labels are removed by the
-mirror. We do not synthesize, correct, pad, or concatenate student answers.
-
-The mirror's **prompt fields include rubrics in sets 5 and 6**. Preparation
-removes the explicit rubric section and the set-5 item title. Sets 1, 2, and 10
-retain their experiment procedures and data tables from the mirror's textual
-transcription. The original field hash, source URL, and optional image URL are
-logged. Set 10 includes an image URL; generation uses the mirror's textual
-representation, not a vision model. We inspected the text, but have not
-independently validated it against every original assessment image. No rubric,
-human response, grading label, or reference answer is given to DeepSeek.
-Changed or inconsistent rubric boundaries fail preparation.
-
-| Set | Topic | Unique eligible responses available | Selected |
-|---|---|---:|---:|
-| 1 | Replicating an experiment | 696 | 50 |
-| 2 | Plastic stretchability investigation | 849 | 50 |
-| 5 | Protein synthesis | 194 | 50 |
-| 6 | Cell-membrane transport | 206 | 50 |
-| 10 | Lid color, temperature, and doghouse paint | 506 | 50 |
-
-We pool the mirror's train/validation/test partitions for this descriptive pilot;
-original split and response IDs are retained. These are **answer-level splits**,
-not held-out questions. Before Gemini optimization, reserve prompt families for
-independent evaluation. With only five science prompts, broad transfer claims
-are not supported. This is science education, not CS education.
-
-Selecting only long human answers changes the population. The added length
-instruction applies to AI answers only and is a documented generation condition,
-not evidence that it matches the original student setting. Compare actual lengths
-and correctness before attributing score differences to authorship.
-
-## Outputs and resuming
-
-- `data/sas/dataset.json`: pinned revision and sampling configuration.
-- `data/sas/coverage.json`: pool, eligibility, deduplication and sampling counts.
-- `data/sas/questions.jsonl`: cleaned prompts and raw sampled human answers.
-- `runs/sas-balanced/generation.json`: settings, revision, input hash and environment.
-- `runs/sas-balanced/generation_coverage.json`: accepted/rejected counts and missing quota per prompt.
-- `runs/sas-balanced/answers.jsonl`: all attempts, rendered prompts, raw output, reasoning,
-  final answers, completion status, per-response seeds, GPU, tokens and timing.
-- `runs/sas-balanced/snapjudge/coverage.json`: actual submission eligibility.
-- `runs/sas-balanced/snapjudge/index.jsonl`: opaque file names mapped to answer IDs.
-- `runs/sas-balanced/snapjudge/results.csv`, `results_json/`: official raw results.
-- `runs/sas-balanced/snapjudge/scores.jsonl`: results joined to local authorship.
-- `runs/sas-balanced/snapjudge/report.json`: scores, verdicts, coverage and exclusions.
-
-Generation flushes each attempt to disk. Re-submit the same command to resume;
-accepted slots are not regenerated, and saved rejected attempts count toward
-the five-attempt budget. Each retry has a distinct deterministic seed. Changed settings are rejected; use new
-run/data directories for new configurations. SnapJudge's client also resumes
-finished documents. Do not edit exported files or inputs under a running job.
-All attempts are preserved; short or incomplete outputs are never scored as
-completed answers. Retrying until eligible conditions the AI sample on length and
-completion; report rejection rates alongside detector performance. GPU/library differences can prevent bitwise reproducibility.
-Back up output separately: Duke xtmp is not backed up. Data, outputs, caches,
-virtual environments, and key files are gitignored.
-
-Overrides for a separate smaller run:
-
-```bash
-HUMANS_PER_QUESTION=5 SAMPLES=1 DATA_DIR=data/sas-smoke RUN_DIR=runs/sas-smoke \
-    sbatch scripts/baseline.sbatch
-RUN_DIR=runs/sas-smoke sbatch scripts/score.sbatch
-```
-
-Submit the second command after the first succeeds. Other generation overrides:
-`MAX_ATTEMPTS`, `MAX_NEW_TOKENS` and `PRECISION` (`4bit` or `16bit`; 16-bit requires a 48 GB card).
-For direct steps inside the appropriate compute allocation:
-
-```bash
-python -m assessengine prepare
-python -m assessengine generate
-python -m assessengine.snapjudge export
-python -m assessengine.snapjudge run
-```
-
-## Diagnostics and tests (local CPU)
-
-No models or detector calls:
+## Local diagnostics and tests
 
 ```bash
 python3 -m venv .venv-diagnostic
@@ -218,32 +214,25 @@ source .venv-diagnostic/bin/activate
 python -m pip install -r requirements-diagnostic.txt
 HF_HOME="$PWD/.cache/huggingface" python -m assessengine.diagnose
 python -m unittest discover -s tests -v
+bash -n scripts/baseline.sbatch
+bash -n scripts/score.sbatch
 ```
 
-The diagnostic now defaults to **all ten SAS prompts**, removing exact within-prompt
-text duplicates and recording the dataset revision. It writes
-`data/diagnostics/sas/report.json` and `questions.csv`. Use `--dataset mohler` for
-historical Mohler analysis. Word counts use whitespace; SnapJudge is authoritative
-about its own eligibility. `bash -n scripts/baseline.sbatch` and
-`bash -n scripts/score.sbatch` check shell syntax.
-
-## Interpreting results
-
-SnapJudge requires at least 50 words and was calibrated on research papers.
-Its `ai_generated_share` is the fraction of windows classified AI-generated,
-**not an authorship probability**. AI-polished windows count as human-written in
-the website verdict. Short answers have few windows, so scores may be coarse.
-No Desklib threshold is applied. Missing/errors/exclusions are shown separately.
-This is a detector baseline, not proof of genuine human–LLM divergence or cheating.
-Human responses to modified prompts are still needed for the eventual research claim.
+The diagnostic covers all ten SAS prompts, writing `data/diagnostics/sas/`.
+Use `--dataset mohler` for historical analysis. Tests spend no detector credits.
+Data, runs, keys, caches, and environments are gitignored. Duke xtmp is not
+backed up; preserve results and the Pangram ledger elsewhere.
 
 ## Sources
 
-- [ASAP-SAS original competition](https://www.kaggle.com/competitions/asap-sas)
-- [S-GRADES Hugging Face conversion](https://huggingface.co/datasets/nlpatunt/D_ASAP-SAS)
-- [Prompt/source documents](https://huggingface.co/datasets/nlpatunt/dataset_rubrics)
-- [DeepSeek model card](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B)
-- [SnapJudge official batch guide and client](https://nlplab.cs.duke.edu/snapjudge/batch/)
+- [ASAP-SAS original](https://www.kaggle.com/competitions/asap-sas) and
+  [mirror](https://huggingface.co/datasets/nlpatunt/D_ASAP-SAS).
+- [Prompt sources](https://huggingface.co/datasets/nlpatunt/dataset_rubrics).
+- [DeepSeek model](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B).
+- [Pangram API](https://docs.pangram.com/api-reference/introduction),
+  [balance](https://docs.pangram.com/api-reference/balance),
+  [models](https://docs.pangram.com/api-reference/models),
+  [billing units](https://www.pangram.com/contact-us/research).
 
-Consult original dataset terms before redistribution. Hugging Face availability
-alone is not a redistribution license.
+Consult original dataset terms before redistribution. SnapJudge's legacy adapter
+remains for reproducibility but is not called by either job script.

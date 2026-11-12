@@ -42,5 +42,5 @@ python -m assessengine prepare --humans-per-question "${HUMANS_PER_QUESTION:-50}
 python -m assessengine generate --data "${DATA_DIR:-data/sas}" \
     --run "${RUN_DIR:-runs/sas-balanced}" --samples "${SAMPLES:-50}" --max-attempts "${MAX_ATTEMPTS:-5}" \
     --max-new-tokens "${MAX_NEW_TOKENS:-4096}" --precision "${PRECISION:-4bit}"
-# Export only: SnapJudge submissions run separately with your private key.
-python -m assessengine.snapjudge export --run "${RUN_DIR:-runs/sas-balanced}"
+# Offline budget preview only; Pangram scoring is a separate paid job.
+python -m assessengine.pangram plan --run "${RUN_DIR:-runs/sas-balanced}"
