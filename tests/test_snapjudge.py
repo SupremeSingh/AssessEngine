@@ -87,6 +87,28 @@ class SnapJudgeTests(unittest.TestCase):
         self.assertEqual(result['ai']['scored'], 1)
         self.assertEqual(result['ai']['mean_generated_window_share'], 1)
 
+    def test_official_utf8_bom_csv_reports_without_resubmission(self):
+        output = self.exported()
+        rows = read_jsonl(output / 'index.jsonl')
+        with (output / 'results.csv').open('w', newline='', encoding='utf-8-sig') as stream:
+            writer = csv.DictWriter(stream, fieldnames=['file', 'verdict', 'ai_generated_share', 'error'])
+            writer.writeheader()
+            for row in rows:
+                if row['file']:
+                    ai = row['authorship'] == 'ai'
+                    writer.writerow(dict(file=row['file'], verdict='AI-generated' if ai else 'Human-written',
+                                         ai_generated_share=int(ai), error=''))
+        self.assertTrue((output / 'results.csv').read_bytes().startswith(b'\xef\xbb\xbf'))
+        with patch('assessengine.snapjudge.subprocess.run') as submit, \
+             contextlib.redirect_stdout(io.StringIO()):
+            report(self.run)
+        submit.assert_not_called()
+        result = json.loads((output / 'report.json').read_text())
+        self.assertEqual(result['human']['scored'], 1)
+        self.assertEqual(result['ai']['scored'], 1)
+        self.assertEqual(result['human']['mean_generated_window_share'], 0)
+        self.assertEqual(result['ai']['mean_generated_window_share'], 1)
+
     def test_official_client_receives_key_path_and_no_save(self):
         key = self.run / 'secret.key'
         key.write_text('sjk_private_test_value')

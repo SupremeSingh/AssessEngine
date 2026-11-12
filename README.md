@@ -50,6 +50,19 @@ tail -f logs/assess-score-JOB_ID.out
 cat runs/sas-balanced/snapjudge/report.json
 ```
 
+If SnapJudge finished all documents but reporting failed with `KeyError: 'file'`,
+pull the parser fix and rebuild **locally from saved results**, without submitting
+anything again:
+
+```bash
+module load python/3.12.8
+source .venv/bin/activate
+python -m assessengine.snapjudge report
+```
+
+The official CSV has a UTF-8 byte-order mark; the parser now accepts it as well
+as ordinary UTF-8. No new job, API key, or detector requests are needed for reporting.
+
 Results are kept separately under `runs/sas-balanced/snapjudge/`: `results.csv`,
 `results_json/` (full raw responses), `scores.jsonl` joined with authorship,
 `index.jsonl`, `export.json` (input hashes/selection policy), `coverage.json`,

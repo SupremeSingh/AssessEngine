@@ -77,8 +77,14 @@ def export(run, allow_partial=False):
 def report(run):
     output = Path(run) / 'snapjudge'
     index = read_jsonl(output / 'index.jsonl')
-    with (output / 'results.csv').open(newline='', encoding='utf-8') as stream:
-        results = list(csv.DictReader(stream))
+    # The official batch client writes UTF-8 with a BOM for spreadsheet compatibility.
+    # utf-8-sig accepts files both with and without that marker.
+    with (output / 'results.csv').open(newline='', encoding='utf-8-sig') as stream:
+        reader = csv.DictReader(stream)
+        required = {'file', 'verdict', 'ai_generated_share', 'error'}
+        if not required.issubset(reader.fieldnames or []):
+            raise ValueError(f'Unexpected SnapJudge CSV columns: {reader.fieldnames}')
+        results = list(reader)
     by_file = {}
     expected = {row['file'] for row in index if row['file']}
     for result in results:
