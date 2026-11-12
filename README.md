@@ -8,29 +8,28 @@ In our five-question pilot, SnapJudge detected **206 of 221 AI answers (93.2%)**
 and flagged **none of the 221 human answers**, giving **96.6% accuracy** on this sample.
 
 This is a promising baseline for selected answers of at least 50 words, with
-most misses concentrated in the protein-synthesis question. It does not yet
-show that prompt changes improve detection or that results generalize to other
-questions and models. [Detailed experiment, tables, and limitations](experiments/001-snapjudge-sas-baseline.md).
+most misses concentrated in the protein-synthesis question. Results cover five
+selected questions and do not establish generalization to other questions or
+models. [Detailed experiment, tables, and limitations](experiments/001-snapjudge-sas-baseline.md).
 
-**Can meaning-preserving question edits make DeepSeek answers easier to detect?**
+**Can Gemini rewrite questions so SnapJudge detects more DeepSeek answers?**
 
-Not tested yet. The next stage uses Gemini 3.1 Pro Preview to propose exactly
-one paper-informed rewrite for each of the five questions, keeping source context
-fixed. This is one shot: five calls total, no detector feedback or revision loop.
-Gemini records a task contract and self-check for each rewrite. We compare fresh answers to original versus modified questions using
-continuous detector decision scores as well as binary detection rates.
+In our exploratory run, SnapJudge detected **214 of 221 rewritten-question
+answers (96.8%)**, compared with **206 of 221 original-question answers (93.2%)**.
+That is **8 more detections, a 3.6 percentage-point increase**.
 
-[Gemini setup, instructions, validity checks, and run commands](experiments/002-gemini-question-edits.md).
+Gemini 3.1 Pro produced one rewrite per question with minimal instructions and
+no detector feedback. The counts match within question, but meaning preservation
+and answer correctness remain unverified; this aggregate comparison does not
+establish statistical significance or improved human–AI separation on rewritten
+prompts. [Results, score interpretation, and limitations](experiments/004-snapjudge-rewrite-results.md).
 
-**Latest exploratory round:** Gemini now gets minimal instructions and no word
-limit, with freedom to elicit confused, mechanical or easily detected answers
-while retaining meaning. These edits require inspection; incorrectness is not
-the same as detectability. [Protocol and outputs](experiments/003-exploratory-question-rewrites.md).
+The tested rewrites include changes to source context for sets 1 and 2.
+[Exact protocol and cluster commands](experiments/003-exploratory-question-rewrites.md).
 
-To test the latest saved rewrites on the cluster (221 new DeepSeek answers,
-then SnapJudge), follow the [rewrite evaluation commands](experiments/003-exploratory-question-rewrites.md#cluster-evaluation).
-The frozen rewrites are committed under `experiments/inputs/`; no Gemini key or
-repeat Gemini calls are needed. This uses separate data and run directories.
+The frozen rewrites are committed under `experiments/inputs/`; the completed
+evaluation used a separate run directory, preserving the original baseline.
+Earlier paper-guided proposals were not the rewrites evaluated in this run.
 
 ## Active workflow: SnapJudge (supersedes Pangram instructions below)
 

@@ -1,5 +1,10 @@
 # Exploratory round: minimal-instruction Gemini rewriting
 
+**Evaluation completed November 12, 2026:** SnapJudge detected 214 of 221 new
+AI answers (96.8%), versus 206 of 221 (93.2%) in the original baseline.
+[Evaluation results and limitations](004-snapjudge-rewrite-results.md).
+The preparation notes below describe the state before that evaluation.
+
 **Completed locally:** five calls to Gemini 3.1 Pro produced one full-question
 rewrite per SAS prompt. All are saved in `runs/gemini-exploratory/review.md`.
 The model mainly chose exaggerated technical/academic register and stylistic
