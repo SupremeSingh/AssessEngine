@@ -1,5 +1,7 @@
 import unittest
 
+from assessengine.generation import validate_resume_source
+
 from assessengine.generation import attempt_seed, next_attempt, qualifies, quota_report
 
 
@@ -9,6 +11,20 @@ def row(sample=0, attempt=1, words=60, status='complete'):
 
 
 class GenerationTests(unittest.TestCase):
+    def test_variable_quotas_and_safe_import(self):
+        questions = [{'question_id': str(n)} for n in [1,2,5,6,10]]
+        targets = {q['question_id']: 21 if q['question_id']=='10' else 50 for q in questions}
+        previous = {'samples':20, 'revision':'fixed', 'seed':42}
+        current = {**previous, 'samples':50, 'samples_by_question': targets}
+        validate_resume_source(previous, current, questions, [])
+        summary = quota_report(questions, [], targets, 5)
+        self.assertEqual(sum(q['missing'] for q in summary['questions']), 221)
+        self.assertFalse(summary['all_quotas_met'])
+        with self.assertRaisesRegex(ValueError, 'different generation settings'):
+            validate_resume_source(previous, {**current, 'seed':43}, questions, [])
+        with self.assertRaisesRegex(ValueError, 'must not shrink'):
+            validate_resume_source(previous, {**current, 'samples_by_question': {'10':19}}, questions, [])
+
     def test_only_completed_long_final_answers_qualify(self):
         self.assertTrue(qualifies(row(words=50)))
         self.assertFalse(qualifies(row(words=49)))

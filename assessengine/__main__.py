@@ -11,7 +11,7 @@ from pathlib import Path
 from .core import (append_jsonl, digest, read_jsonl,
                    split_response, write_json, write_jsonl)
 
-from .generation import attempt_seed, next_attempt, qualifies, quota_report
+from .generation import attempt_seed, next_attempt, qualifies, quota_report, validate_resume_source
 from .sas import DATASET, REVISION, SETS, prepare_records, response_prompt
 MODEL = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-14B'
 LOG = logging.getLogger('assessengine')
@@ -72,6 +72,13 @@ def generate(args):
         raise RuntimeError(f'GPU has {memory:.1f} GiB; request a GPU with at least {minimum} GiB.')
     source = Path(args.data) / 'questions.jsonl'
     questions = read_jsonl(source)
+    targets = {q['question_id']: args.samples for q in questions}
+    if args.samples_by_set:
+        by_set = json.loads(Path(args.samples_by_set).read_text())
+        if set(by_set) != {str(q['essay_set']) for q in questions} or any(
+                type(n) is not int or n < 1 for n in by_set.values()):
+            raise ValueError('Quota file must give a positive integer for every essay set')
+        targets = {q['question_id']: by_set[str(q['essay_set'])] for q in questions}
     run = Path(args.run)
     run.mkdir(parents=True, exist_ok=True)
     manifest_path = run / 'generation.json'
@@ -83,15 +90,28 @@ def generate(args):
               'prompt_mode': 'sas_question_context_and_length_v2', 'top_k': 0,
               'answer_min_words': args.answer_min_words, 'answer_max_words': args.answer_max_words,
               'max_attempts_per_slot': args.max_attempts, 'required_final_words': 50}
+    if args.samples_by_set:
+        config['samples_by_question'] = targets
     manifest(manifest_path, config)
     # Persist the exact human/question inputs alongside generated responses.
     write_jsonl(run / 'questions.jsonl', questions)
     destination = run / 'answers.jsonl'
+    if args.resume_from and not destination.exists():
+        previous = Path(args.resume_from)
+        if (previous/'answers.jsonl').exists():
+            old_config = json.loads((previous/'generation.json').read_text())['config']
+            old_rows = read_jsonl(previous/'answers.jsonl')
+            validate_resume_source(old_config, config, questions, old_rows)
+            write_jsonl(destination, old_rows)
+            write_json(run/'resumed_from.json', {
+                'run': str(previous), 'answers_sha256': digest(previous/'answers.jsonl'),
+                'generation_manifest': json.loads((previous/'generation.json').read_text()),
+                'imported_attempts': len(old_rows)})
     existing = read_jsonl(destination) if destination.exists() else []
     pending = any(next_attempt([r for r in existing if r['question_id'] == q['question_id']],
-                               args.samples, args.max_attempts) is not None for q in questions)
+                               targets[q['question_id']], args.max_attempts) is not None for q in questions)
     if not pending:
-        summary = quota_report(questions, existing, args.samples, args.max_attempts)
+        summary = quota_report(questions, existing, targets, args.max_attempts)
         write_json(run / 'generation_coverage.json', summary)
         if not summary['all_quotas_met']:
             raise RuntimeError('Retry budget exhausted; see generation_coverage.json. Do not score yet.')
@@ -108,8 +128,9 @@ def generate(args):
     eos = model.generation_config.eos_token_id
     eos_ids = {eos} if isinstance(eos, int) else set(eos or [])
     for question in questions:
+        target = targets[question['question_id']]
         group = [r for r in existing if r['question_id'] == question['question_id']]
-        while (task := next_attempt(group, args.samples, args.max_attempts)) is not None:
+        while (task := next_attempt(group, target, args.max_attempts)) is not None:
             sample, attempt = task
             seed = attempt_seed(args.seed, question['question_id'], sample, attempt)
             set_seed(seed)
@@ -135,12 +156,12 @@ def generate(args):
             append_jsonl(destination, row)
             group.append(row)
             existing.append(row)
-            summary = quota_report(questions, existing, args.samples, args.max_attempts)
+            summary = quota_report(questions, existing, targets, args.max_attempts)
             write_json(run / 'generation_coverage.json', summary)
             LOG.info('%s slot %d/%d attempt %d/%d: %s, %d words, accepted=%s (%.1fs)',
-                     question['question_id'], sample + 1, args.samples, attempt,
+                     question['question_id'], sample + 1, target, attempt,
                      args.max_attempts, row['status'], row['words'], row['accepted'], row['seconds'])
-    summary = quota_report(questions, existing, args.samples, args.max_attempts)
+    summary = quota_report(questions, existing, targets, args.max_attempts)
     write_json(run / 'generation_coverage.json', summary)
     if not summary['all_quotas_met']:
         raise RuntimeError('Retry budget exhausted; see generation_coverage.json. Do not score yet.')
@@ -159,6 +180,8 @@ def main():
     gen.add_argument('--data', default='data/sas')
     gen.add_argument('--run', default='runs/sas-balanced')
     gen.add_argument('--samples', type=int, default=50, help='Qualifying answers per question')
+    gen.add_argument('--samples-by-set', help='JSON file mapping each essay set to its answer quota')
+    gen.add_argument('--resume-from', help='Import compatible saved attempts into a new run once')
     gen.add_argument('--max-attempts', type=int, default=5, help='Attempt limit per answer slot')
     gen.add_argument('--seed', type=int, default=42)
     gen.add_argument('--max-new-tokens', type=int, default=4096)

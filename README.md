@@ -27,7 +27,7 @@ limit, with freedom to elicit confused, mechanical or easily detected answers
 while retaining meaning. These edits require inspection; incorrectness is not
 the same as detectability. [Protocol and outputs](experiments/003-exploratory-question-rewrites.md).
 
-To test the latest saved rewrites on the cluster (100 new DeepSeek answers,
+To test the latest saved rewrites on the cluster (221 new DeepSeek answers,
 then SnapJudge), follow the [rewrite evaluation commands](experiments/003-exploratory-question-rewrites.md#cluster-evaluation).
 The frozen rewrites are committed under `experiments/inputs/`; no Gemini key or
 repeat Gemini calls are needed. This uses separate data and run directories.

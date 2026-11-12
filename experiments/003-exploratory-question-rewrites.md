@@ -58,12 +58,17 @@ transfers them even though `runs/` is ignored. These include Gemini's rewritten
 background for sets 1 and 2, rather than the display versions assembled with the
 original background. Equivalence remains unverified.
 
-The GPU script generates **20 accepted answers per question (100 total)** using
+The GPU script generates **221 accepted answers: 50 each for sets 1, 2, 5, 6 and 21 for set 10** using
 the same pinned DeepSeek revision, quantization, sampling settings, seed scheme,
 80–120-word instruction, and minimum 50-word acceptance rule as the baseline.
 Up to five attempts are allowed per answer slot. Inputs go into
-`data/sas-exploratory-v1/`, outputs into `runs/sas-exploratory-v1/`; the original
+`data/sas-exploratory-v1/`, outputs into `runs/sas-exploratory-221-v1/`; the original
 baseline is untouched. No historical humans are attached to rewritten prompts.
+
+Cancel the previous generation and dependent scoring jobs before restarting.
+The new run imports compatible saved attempts from `runs/sas-exploratory-v1/`
+once, then generates only missing answers. Original data and old detector results
+remain separate. The import rejects changed inference settings or questions.
 
 After pushing local changes and pulling on the cluster:
 
@@ -75,22 +80,22 @@ mkdir -p logs
 sbatch scripts/rewrite-baseline.sbatch
 ```
 
-Allow up to four hours of GPU runtime, plus queue time. If it times out, submit
+Allow up to eight hours of GPU runtime, plus queue time. If it times out, submit
 the same script again; saved accepted answers are reused. Once generation has
 completed successfully, run:
 
 ```bash
-cat runs/sas-exploratory-v1/generation_coverage.json
-RUN_DIR=runs/sas-exploratory-v1 sbatch scripts/score.sbatch
+cat runs/sas-exploratory-221-v1/generation_coverage.json
+RUN_DIR=runs/sas-exploratory-221-v1 sbatch scripts/score.sbatch
 ```
 
 Require `all_quotas_met: true` before scoring. No `ALLOW_PARTIAL` flag is used.
-The scoring job uses the existing `.secrets/snapjudge.key` and submits 100 new
+The scoring job uses the existing `.secrets/snapjudge.key` and submits 221 new
 AI answers, with no repeated baseline submissions. Results include binary
 verdicts, raw continuous score margins, and per-answer records:
 
 ```bash
-cat runs/sas-exploratory-v1/snapjudge/report.json
+cat runs/sas-exploratory-221-v1/snapjudge/report.json
 ```
 
 For the original baseline, recompute the new report fields from saved results
@@ -101,8 +106,8 @@ locally on the cluster, with no API calls:
 ```
 
 Compare AI detection rates and continuous margins **within each question**.
-The new run has 20 answers per question; the historical run has 50 for four
-questions and 21 for set 10, so pooled rates have different question weights.
+Both runs have 50 answers for four questions and 21 for set 10, so question
+counts match. Individual human/model answers are not paired.
 This is a historical-baseline comparison, not a simultaneous controlled rerun.
 Check detector versions/thresholds in the saved raw responses before comparing
 raw margins. A rise in scores alone establishes neither preserved meaning nor

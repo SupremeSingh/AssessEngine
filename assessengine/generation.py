@@ -30,10 +30,28 @@ def attempt_seed(base, question_id, sample, attempt):
 def quota_report(questions, rows, samples, max_attempts):
     groups = []
     for question in questions:
+        target = samples[question['question_id']] if isinstance(samples, dict) else samples
         group = [r for r in rows if r['question_id'] == question['question_id']]
         accepted = len({r['sample'] for r in group if qualifies(r)})
-        groups.append({'question_id': question['question_id'], 'target': samples,
-                       'accepted': accepted, 'missing': max(0, samples - accepted),
+        groups.append({'question_id': question['question_id'], 'target': target,
+                       'accepted': accepted, 'missing': max(0, target - accepted),
                        'attempts': len(group), 'rejected': sum(not qualifies(r) for r in group)})
     return {'minimum_final_answer_words': 50, 'max_attempts_per_slot': max_attempts,
             'all_quotas_met': all(g['missing'] == 0 for g in groups), 'questions': groups}
+
+
+def validate_resume_source(previous, current, questions, rows):
+    """Reuse attempts only when inference settings match and quotas do not shrink."""
+    quota_keys = {'samples', 'samples_by_question'}
+    if {k:v for k,v in previous.items() if k not in quota_keys} != {
+            k:v for k,v in current.items() if k not in quota_keys}:
+        raise ValueError('Resume source has different generation settings or question inputs')
+    old = previous.get('samples_by_question', {})
+    new = current.get('samples_by_question', {})
+    for q in questions:
+        qid = q['question_id']
+        if new.get(qid, current['samples']) < old.get(qid, previous['samples']):
+            raise ValueError('Resume quotas must not shrink')
+    valid_ids = {q['question_id'] for q in questions}
+    if any(r['question_id'] not in valid_ids for r in rows):
+        raise ValueError('Unknown question in saved answers')
