@@ -1,5 +1,17 @@
 # AssessEngine
 
+## Experments
+
+**Can SnapJudge detect DeepSeek-generated answers to educational questions?**
+
+In our five-question pilot, SnapJudge detected **206 of 221 AI answers (93.2%)**
+and flagged **none of the 221 human answers**, giving **96.6% accuracy** on this sample.
+
+This is a promising baseline for selected answers of at least 50 words, with
+most misses concentrated in the protein-synthesis question. It does not yet
+show that prompt changes improve detection or that results generalize to other
+questions and models. [Detailed experiment, tables, and limitations](experiments/001-snapjudge-sas-baseline.md).
+
 ## Active workflow: SnapJudge (supersedes Pangram instructions below)
 
 Pangram API scoring is stopped. The default `scripts/score.sbatch` now uses

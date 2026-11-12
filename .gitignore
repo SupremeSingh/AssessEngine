@@ -9,5 +9,6 @@ logs/
 .env
 .env.pangram
 .secrets/
+sas-report-data.tar.gz
 *.key
 key.txt

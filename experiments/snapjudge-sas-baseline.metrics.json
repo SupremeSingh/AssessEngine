@@ -1,0 +1,516 @@
+{
+  "archive_sha256": "2cd9c9908b820c8904b8633bfa8b17ac3a5693324e3f00023b0f9ff0c19e7803",
+  "metrics": {
+    "tp": 206,
+    "fn": 15,
+    "fp": 0,
+    "tn": 221,
+    "accuracy": 0.9660633484162896,
+    "ai_recall": 0.9321266968325792,
+    "human_specificity": 1.0,
+    "ai_precision": 1.0,
+    "ai_f1": 0.9648711943793911
+  },
+  "questions": [
+    {
+      "essay_set": 1,
+      "question_id": "f00fa49907fd1d05",
+      "metrics": {
+        "tp": 48,
+        "fn": 2,
+        "fp": 0,
+        "tn": 50,
+        "accuracy": 0.98,
+        "ai_recall": 0.96,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 0.9795918367346939
+      },
+      "human_lengths": {
+        "n": 50,
+        "total_words": 3412,
+        "minimum": 50,
+        "mean": 68.24,
+        "median": 65.0,
+        "maximum": 113
+      },
+      "ai_lengths": {
+        "n": 50,
+        "total_words": 4478,
+        "minimum": 52,
+        "mean": 89.56,
+        "median": 83.5,
+        "maximum": 215
+      },
+      "attempts": 54,
+      "rejected": 4
+    },
+    {
+      "essay_set": 2,
+      "question_id": "a8967eb8986bb68d",
+      "metrics": {
+        "tp": 48,
+        "fn": 2,
+        "fp": 0,
+        "tn": 50,
+        "accuracy": 0.98,
+        "ai_recall": 0.96,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 0.9795918367346939
+      },
+      "human_lengths": {
+        "n": 50,
+        "total_words": 3544,
+        "minimum": 50,
+        "mean": 70.88,
+        "median": 67.5,
+        "maximum": 108
+      },
+      "ai_lengths": {
+        "n": 50,
+        "total_words": 3831,
+        "minimum": 50,
+        "mean": 76.62,
+        "median": 75.0,
+        "maximum": 109
+      },
+      "attempts": 53,
+      "rejected": 3
+    },
+    {
+      "essay_set": 5,
+      "question_id": "d4e56e981111429a",
+      "metrics": {
+        "tp": 39,
+        "fn": 11,
+        "fp": 0,
+        "tn": 50,
+        "accuracy": 0.89,
+        "ai_recall": 0.78,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 0.8764044943820225
+      },
+      "human_lengths": {
+        "n": 50,
+        "total_words": 3572,
+        "minimum": 50,
+        "mean": 71.44,
+        "median": 62.0,
+        "maximum": 242
+      },
+      "ai_lengths": {
+        "n": 50,
+        "total_words": 4927,
+        "minimum": 55,
+        "mean": 98.54,
+        "median": 96.0,
+        "maximum": 153
+      },
+      "attempts": 50,
+      "rejected": 0
+    },
+    {
+      "essay_set": 6,
+      "question_id": "e6c4abaffccde05c",
+      "metrics": {
+        "tp": 50,
+        "fn": 0,
+        "fp": 0,
+        "tn": 50,
+        "accuracy": 1.0,
+        "ai_recall": 1.0,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 1.0
+      },
+      "human_lengths": {
+        "n": 50,
+        "total_words": 3426,
+        "minimum": 51,
+        "mean": 68.52,
+        "median": 62.0,
+        "maximum": 118
+      },
+      "ai_lengths": {
+        "n": 50,
+        "total_words": 3970,
+        "minimum": 56,
+        "mean": 79.4,
+        "median": 78.5,
+        "maximum": 111
+      },
+      "attempts": 50,
+      "rejected": 0
+    },
+    {
+      "essay_set": 10,
+      "question_id": "256574493fbd9769",
+      "metrics": {
+        "tp": 21,
+        "fn": 0,
+        "fp": 0,
+        "tn": 21,
+        "accuracy": 1.0,
+        "ai_recall": 1.0,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 1.0
+      },
+      "human_lengths": {
+        "n": 21,
+        "total_words": 1569,
+        "minimum": 50,
+        "mean": 74.71428571428571,
+        "median": 66,
+        "maximum": 139
+      },
+      "ai_lengths": {
+        "n": 21,
+        "total_words": 1361,
+        "minimum": 50,
+        "mean": 64.80952380952381,
+        "median": 62,
+        "maximum": 123
+      },
+      "attempts": 26,
+      "rejected": 5
+    }
+  ],
+  "misses": [
+    {
+      "id": "f00fa49907fd1d05:4:1",
+      "essay_set": 1,
+      "words": 75,
+      "raw_tier": "polished"
+    },
+    {
+      "id": "f00fa49907fd1d05:29:1",
+      "essay_set": 1,
+      "words": 79,
+      "raw_tier": "polished"
+    },
+    {
+      "id": "a8967eb8986bb68d:13:1",
+      "essay_set": 2,
+      "words": 58,
+      "raw_tier": "polished"
+    },
+    {
+      "id": "a8967eb8986bb68d:42:1",
+      "essay_set": 2,
+      "words": 70,
+      "raw_tier": "polished"
+    },
+    {
+      "id": "d4e56e981111429a:2:1",
+      "essay_set": 5,
+      "words": 111,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:9:1",
+      "essay_set": 5,
+      "words": 121,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:12:1",
+      "essay_set": 5,
+      "words": 115,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:19:1",
+      "essay_set": 5,
+      "words": 115,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:22:1",
+      "essay_set": 5,
+      "words": 75,
+      "raw_tier": "polished"
+    },
+    {
+      "id": "d4e56e981111429a:25:1",
+      "essay_set": 5,
+      "words": 104,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:35:1",
+      "essay_set": 5,
+      "words": 91,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:36:1",
+      "essay_set": 5,
+      "words": 73,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:37:1",
+      "essay_set": 5,
+      "words": 140,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:43:1",
+      "essay_set": 5,
+      "words": 138,
+      "raw_tier": "human"
+    },
+    {
+      "id": "d4e56e981111429a:48:1",
+      "essay_set": 5,
+      "words": 81,
+      "raw_tier": "human"
+    }
+  ],
+  "length_bins": [
+    {
+      "words": "50\u201379",
+      "metrics": {
+        "tp": 102,
+        "fn": 6,
+        "fp": 0,
+        "tn": 169,
+        "accuracy": 0.9783393501805054,
+        "ai_recall": 0.9444444444444444,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 0.9714285714285714
+      }
+    },
+    {
+      "words": "80\u2013120",
+      "metrics": {
+        "tp": 94,
+        "fn": 6,
+        "fp": 0,
+        "tn": 49,
+        "accuracy": 0.959731543624161,
+        "ai_recall": 0.94,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 0.9690721649484536
+      }
+    },
+    {
+      "words": "121+",
+      "metrics": {
+        "tp": 10,
+        "fn": 3,
+        "fp": 0,
+        "tn": 3,
+        "accuracy": 0.8125,
+        "ai_recall": 0.7692307692307693,
+        "human_specificity": 1.0,
+        "ai_precision": 1.0,
+        "ai_f1": 0.8695652173913043
+      }
+    }
+  ],
+  "raw_tiers": {
+    "human": {
+      "human": 221
+    },
+    "ai": {
+      "generated": 206,
+      "polished": 5,
+      "human": 10
+    }
+  },
+  "human_lengths": {
+    "n": 221,
+    "total_words": 15523,
+    "minimum": 50,
+    "mean": 70.23981900452489,
+    "median": 64,
+    "maximum": 242
+  },
+  "ai_lengths": {
+    "n": 221,
+    "total_words": 18567,
+    "minimum": 50,
+    "mean": 84.01357466063348,
+    "median": 80,
+    "maximum": 215
+  },
+  "missed_ai_lengths": {
+    "n": 15,
+    "total_words": 1446,
+    "minimum": 58,
+    "mean": 96.4,
+    "median": 91,
+    "maximum": 140
+  },
+  "detected_ai_lengths": {
+    "n": 206,
+    "total_words": 17121,
+    "minimum": 50,
+    "mean": 83.1116504854369,
+    "median": 80.0,
+    "maximum": 215
+  },
+  "attempts": 233,
+  "accepted": 221,
+  "rejected": 12,
+  "statuses": {
+    "complete": 233
+  },
+  "generated_tokens": 130576,
+  "generation_seconds": 13263.724,
+  "gpus": {
+    "NVIDIA RTX A5000": 233
+  },
+  "windows": {
+    "1": 442
+  },
+  "analysis_timestamps": [
+    "2026-11-11T19:37:05",
+    "2026-11-11T19:37:38"
+  ],
+  "sum_client_document_seconds": 93.60000000000001,
+  "detector_metadata": {
+    "model": "Text detector",
+    "classes": 3,
+    "layer": "text",
+    "thr_nonhuman": 11.95624,
+    "thr_generated": 10.59513,
+    "score_type": "logit3"
+  },
+  "generation_manifest": {
+    "config": {
+      "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+      "revision": "1df8507178afcc1bef68cd8c393f61a886323761",
+      "questions_sha256": "63a23d724e14a475ff82d1297d9af42500a4f562f0b077d0b947587e346713cb",
+      "samples": 50,
+      "seed": 42,
+      "precision": "4bit",
+      "max_new_tokens": 4096,
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "prompt_mode": "sas_question_context_and_length_v2",
+      "top_k": 0,
+      "answer_min_words": 80,
+      "answer_max_words": 120,
+      "max_attempts_per_slot": 5,
+      "required_final_words": 50
+    },
+    "python": "3.12.8",
+    "packages": {
+      "torch": "2.6.0",
+      "transformers": "4.51.3",
+      "datasets": "3.5.0",
+      "bitsandbytes": "0.45.5",
+      "huggingface-hub": "0.30.2"
+    },
+    "git_commit": "cede5d8692246f250732c832413a0a60b9c29327"
+  },
+  "dataset_manifest": {
+    "config": {
+      "dataset": "nlpatunt/D_ASAP-SAS",
+      "revision": "f97ad6415c94c763b901423b72f78f1fbf46d630",
+      "essay_sets": [
+        1,
+        2,
+        5,
+        6,
+        10
+      ],
+      "humans_per_question": 50,
+      "min_human_words": 50,
+      "seed": 42,
+      "preparation_version": 1
+    },
+    "python": "3.12.8",
+    "packages": {
+      "torch": "2.6.0",
+      "transformers": "4.51.3",
+      "datasets": "3.5.0",
+      "bitsandbytes": "0.45.5",
+      "huggingface-hub": "0.30.2"
+    },
+    "git_commit": "296a0c6bccf3dd8edd403a90de06e5bde255ddc8"
+  },
+  "dataset_coverage": [
+    {
+      "essay_set": 1,
+      "loaded_answers": 1672,
+      "unique_answers": 1672,
+      "eligible_answers": 696,
+      "selected_answers": 50,
+      "source_splits": {
+        "train": 1174,
+        "validation": 154,
+        "test": 344
+      }
+    },
+    {
+      "essay_set": 2,
+      "loaded_answers": 1278,
+      "unique_answers": 1277,
+      "eligible_answers": 849,
+      "selected_answers": 50,
+      "source_splits": {
+        "train": 894,
+        "validation": 137,
+        "test": 247
+      }
+    },
+    {
+      "essay_set": 5,
+      "loaded_answers": 1795,
+      "unique_answers": 1785,
+      "eligible_answers": 194,
+      "selected_answers": 50,
+      "source_splits": {
+        "train": 1251,
+        "validation": 180,
+        "test": 364
+      }
+    },
+    {
+      "essay_set": 6,
+      "loaded_answers": 1797,
+      "unique_answers": 1791,
+      "eligible_answers": 206,
+      "selected_answers": 50,
+      "source_splits": {
+        "train": 1217,
+        "validation": 206,
+        "test": 374
+      }
+    },
+    {
+      "essay_set": 10,
+      "loaded_answers": 1640,
+      "unique_answers": 1639,
+      "eligible_answers": 506,
+      "selected_answers": 50,
+      "source_splits": {
+        "train": 1150,
+        "validation": 168,
+        "test": 322
+      }
+    }
+  ],
+  "client": {
+    "source": "https://nlplab.cs.duke.edu/snapjudge/batch/snapjudge_batch.py",
+    "sha256": "da8e3814a48af10a538a38a787901be542f519e121c61b7a3d8ab5994ae1f35f",
+    "save_submissions": false,
+    "concurrency": 3
+  },
+  "export": {
+    "questions_sha256": "63a23d724e14a475ff82d1297d9af42500a4f562f0b077d0b947587e346713cb",
+    "answers_sha256": "cfafc69b123cd05405b927f0244b625c40189b5d3a60589b149cba912af976e3",
+    "min_words": 50,
+    "format_version": 2,
+    "selection_policy": "balanced_saved_answers_v1"
+  },
+  "reporting_commit": "b0d2ee4b5221e31da68f4b9b4fc8f06084237f8b"
+}
