@@ -8,5 +8,6 @@ runs/
 logs/
 .env
 .env.pangram
+.secrets/
 *.key
 key.txt

@@ -1,5 +1,74 @@
 # AssessEngine
 
+## Active workflow: SnapJudge (supersedes Pangram instructions below)
+
+Pangram API scoring is stopped. The default `scripts/score.sbatch` now uses
+**SnapJudge's official online batch client** with `--no-save`, concurrency 3,
+and automatic client retries/resumption. Pangram files and its ledger are
+preserved, but no Pangram endpoint or key is used by the job.
+
+Use the saved **221 human and 221 completed AI answers**, matched by count within
+question: 50 each for sets 1, 2, 5, 6, and 21 each for set 10. `--allow-partial`
+uses the same detector-independent selection for both adapters. Human selection
+uses the original deterministic sample order, never detector scores. All unused
+humans and rejected generations remain untouched. Matching counts is not pairing
+individual students with AI answers. No further generation is needed.
+
+The supplied SnapJudge key is saved locally in **`.secrets/snapjudge.key`**, which
+is gitignored and private. Do not put it in source, chat, shell arguments, or logs.
+From your **Mac terminal**, copy the private file separately from Git:
+
+```bash
+scp /Users/manmit/Desktop/AssessEngine/.secrets/snapjudge.key \
+  ms785@login.cs.duke.edu:/usr/xtmp/ms785/AssessEngine/snapjudge.key
+```
+
+After pushing code changes, on the **cluster**:
+
+```bash
+cd /usr/xtmp/ms785/AssessEngine
+git pull
+mkdir -p .secrets logs
+chmod 700 .secrets
+mv snapjudge.key .secrets/snapjudge.key
+chmod 600 .secrets/snapjudge.key
+module load python/3.12.8
+source .venv/bin/activate
+python -m assessengine.snapjudge export --allow-partial
+ALLOW_PARTIAL=1 sbatch scripts/score.sbatch
+```
+
+Export should show `human:eligible: 221` and `ai:eligible: 221`. It spends no
+detector requests. The scoring job sends one text document per answer, with no
+questions, grading rubrics, labels, or reasoning in submitted text. Only the
+key file's path is passed to the official client. The script is cached locally,
+with URL and SHA-256 recorded. This local key has not been used to submit the
+cluster answers from development; real remote operation remains to be verified.
+
+```bash
+tail -f logs/assess-score-JOB_ID.out
+cat runs/sas-balanced/snapjudge/report.json
+```
+
+Results are kept separately under `runs/sas-balanced/snapjudge/`: `results.csv`,
+`results_json/` (full raw responses), `scores.jsonl` joined with authorship,
+`index.jsonl`, `export.json` (input hashes/selection policy), `coverage.json`,
+and `report.json`. Re-submit the same command to resume finished documents.
+Do not run simultaneous writers or change inputs after exporting.
+
+The service requires **50 words per document**, and was calibrated on research
+papers. Its generated-window share is not an authorship probability; polished
+windows count as human-written in the website verdict. Short answers have few
+windows. `--no-save` requests no retention of submissions under the service's
+documented policy. API keys/quotas for SnapJudge are distinct from Pangram credits;
+Pangram's 1,500-credit policy does not describe SnapJudge billing.
+
+[Official SnapJudge guide/client](https://nlplab.cs.duke.edu/snapjudge/batch/).
+Tests use fake responses only. Run `python -m unittest discover -s tests -v`
+and `bash -n scripts/score.sbatch` for local checks. The sections below document
+the previous Pangram experiment and dataset preparation for reproducibility;
+their Pangram scoring commands are **not the current run instructions**.
+
 ASAP-SAS science/biology questions, authentic student answers, fresh DeepSeek
 responses, and **Pangram realtime detection**. Pangram replaces SnapJudge in the
 default scoring workflow. The ongoing generation does not need changing.

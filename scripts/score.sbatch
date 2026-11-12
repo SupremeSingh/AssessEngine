@@ -18,16 +18,10 @@ if [[ ! -x .venv/bin/python ]]; then
     echo 'Missing .venv; install requirements in a compute allocation first.' >&2
     exit 1
 fi
-# Add Key Here: put your key in .env.pangram, following config/pangram.env.example.
-# The private file is gitignored; never put the actual key in this script.
-if [[ -f .env.pangram ]]; then
-    source .env.pangram
-fi
+# Private key file; never put its value in source or command arguments.
 options=()
 if [[ "${ALLOW_PARTIAL:-0}" == "1" ]]; then
     options+=(--allow-partial)
 fi
-if [[ "${ALLOW_MISSING_BALANCE:-0}" == "1" ]]; then
-    options+=(--allow-missing-balance)
-fi
-.venv/bin/python -m assessengine.pangram run --run "${RUN_DIR:-runs/sas-balanced}" "${options[@]}"
+.venv/bin/python -m assessengine.snapjudge run --run "${RUN_DIR:-runs/sas-balanced}" \
+    --key-file "${SNAPJUDGE_KEY_FILE:-.secrets/snapjudge.key}" "${options[@]}"

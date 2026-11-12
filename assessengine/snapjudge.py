@@ -9,15 +9,16 @@ import subprocess
 import sys
 
 from .core import digest, read_jsonl, write_json, write_jsonl
+from .selection import select_answers
 
 CLIENT_URL = 'https://nlplab.cs.duke.edu/snapjudge/batch/snapjudge_batch.py'
 MIN_WORDS = 50
 
 
-def export(run):
+def export(run, allow_partial=False):
     run = Path(run)
     generation_manifest = run / 'generation.json'
-    if generation_manifest.exists():
+    if generation_manifest.exists() and not allow_partial:
         config = json.loads(generation_manifest.read_text())['config']
         if config.get('prompt_mode') == 'sas_question_context_and_length_v2':
             coverage = run / 'generation_coverage.json'
@@ -28,6 +29,8 @@ def export(run):
     questions, answers = run / 'questions.jsonl', run / 'answers.jsonl'
     sources = {'questions_sha256': digest(questions), 'answers_sha256': digest(answers),
                'min_words': MIN_WORDS, 'format_version': 1}
+    if allow_partial:
+        sources.update(format_version=2, selection_policy='balanced_saved_answers_v1')
     manifest = output / 'export.json'
     if manifest.exists() and json.loads(manifest.read_text()) != sources:
         raise ValueError('Inputs changed since export; use a new run directory to avoid stale results.')
@@ -41,6 +44,9 @@ def export(run):
         records.append({'id': answer['id'], 'question_id': answer['question_id'],
                         'authorship': 'ai', 'text': answer['answer'],
                         'generation_status': answer['status']})
+    if allow_partial:
+        records = [{**row, 'generation_status': 'complete' if row['authorship'] == 'ai' else None}
+                   for row in select_answers(run, allow_partial=True)]
     inputs.mkdir(parents=True, exist_ok=True)
     for row in records:
         row['words'] = len(row['text'].split())
@@ -117,7 +123,7 @@ def run_batch(args):
         raise ValueError('Create your SnapJudge key file first; see README. Do not paste the key in chat.')
     if not key.read_text().strip().startswith('sjk_'):
         raise ValueError('The key file must contain the separately issued sjk_ key.')
-    output = export(args.run)
+    output = export(args.run, allow_partial=getattr(args, 'allow_partial', False))
     if not any((output / 'documents').glob('*.txt')):
         raise ValueError('No eligible answers of at least 50 words; see coverage.json.')
     client = Path('.cache/snapjudge/snapjudge_batch.py').resolve()
@@ -148,12 +154,14 @@ def main():
     for name in ('export', 'run', 'report'):
         command = commands.add_parser(name)
         command.add_argument('--run', default='runs/sas-balanced')
+        command.add_argument('--allow-partial', action='store_true',
+                             help='Match saved human/AI counts per question without more generation')
         if name == 'run':
-            command.add_argument('--key-file', default='~/.config/assessengine/snapjudge.key')
+            command.add_argument('--key-file', default='.secrets/snapjudge.key')
             command.add_argument('--concurrency', type=int, choices=range(1, 11), default=3)
     args = parser.parse_args()
     if args.command == 'export':
-        export(args.run)
+        export(args.run, allow_partial=args.allow_partial)
     elif args.command == 'report':
         report(args.run)
     else:

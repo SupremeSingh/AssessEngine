@@ -23,8 +23,8 @@ class SnapJudgeTests(unittest.TestCase):
                 {'id': 'h1', 'student_answer': self.long_text},
                 {'id': 'h2', 'student_answer': 'word ' * 49}]}])
         write_jsonl(self.run / 'answers.jsonl', [
-            {'id': 'a1', 'question_id': 'q1', 'answer': self.long_text, 'status': 'complete'},
-            {'id': 'a2', 'question_id': 'q1', 'answer': self.long_text, 'status': 'truncated'}])
+            {'id': 'a1', 'question_id': 'q1', 'sample': 0, 'answer': self.long_text, 'status': 'complete'},
+            {'id': 'a2', 'question_id': 'q1', 'sample': 1, 'answer': self.long_text, 'status': 'truncated'}])
 
     def exported(self):
         with contextlib.redirect_stdout(io.StringIO()):
@@ -45,6 +45,22 @@ class SnapJudgeTests(unittest.TestCase):
         write_jsonl(self.run / 'answers.jsonl', [])
         with self.assertRaisesRegex(ValueError, 'Inputs changed'):
             self.exported()
+
+    def test_partial_export_uses_balanced_shared_selection(self):
+        # A partial run may use existing valid answers without completing all quotas.
+        (self.run / 'generation_coverage.json').write_text(json.dumps({'all_quotas_met': False}))
+        # Replace the short human with a second long one; only one should be selected.
+        write_jsonl(self.run / 'questions.jsonl', [
+            {'question_id': 'q1', 'humans': [
+                {'id': 'h1', 'student_answer': self.long_text},
+                {'id': 'h2', 'student_answer': self.long_text}]}])
+        with contextlib.redirect_stdout(io.StringIO()):
+            output = export(self.run, allow_partial=True)
+        index = read_jsonl(output / 'index.jsonl')
+        self.assertEqual([r['id'] for r in index], ['h1', 'a1'])
+        self.assertEqual(len(list((output / 'documents').glob('*.txt'))), 2)
+        manifest = json.loads((output / 'export.json').read_text())
+        self.assertEqual(manifest['selection_policy'], 'balanced_saved_answers_v1')
 
     def test_quota_run_cannot_score_before_finishing(self):
         (self.run / 'generation.json').write_text(json.dumps({
