@@ -86,6 +86,13 @@ def make_plan(rows, ledger, max_credits=1500, total_credits=3000, reserve_credit
                                   'Estimate only; provider counts and account billing are authoritative.'}
 
 
+class PangramHTTPError(RuntimeError):
+    def __init__(self, status, method, path):
+        self.status, self.method, self.path = status, method, path
+        super().__init__(f'Pangram HTTP {status} on {method} {path}; '
+                         'stopped without automatically repeating a paid submission.')
+
+
 class Client:
     def __init__(self, key):
         import requests
@@ -96,25 +103,36 @@ class Client:
     def request(self, method, path, **kwargs):
         response = self.session.request(method, API + path, timeout=(15, 60), **kwargs)
         if not response.ok:
-            raise RuntimeError(f'Pangram HTTP {response.status_code} on {method} {path}; '
-                               'stopped without automatically repeating a paid submission.')
+            raise PangramHTTPError(response.status_code, method, path)
         return response.json()
 
     def balance(self):
         return Decimal(self.request('GET', '/balance')['available_balance_usd'])
 
 
-def process(row, ledger, save, client, reserve_credits=1500, poll_seconds=3, poll_timeout=1800):
+def process(row, ledger, save, client, reserve_credits=1500, poll_seconds=3, poll_timeout=1800,
+            allow_missing_balance=False):
     key = row['cache_key']
     entry = ledger.get(key)
     if entry is None:
-        available = client.balance()
+        available = None
+        if not (allow_missing_balance and getattr(client, 'balance_unavailable', False)):
+            try:
+                available = client.balance()
+            except PangramHTTPError as error:
+                if not (allow_missing_balance and error.status == 404 and
+                        error.method == 'GET' and error.path == '/balance'):
+                    raise
+                client.balance_unavailable = True
+                print('Balance endpoint returned 404: using the explicitly enabled local estimated-credit '
+                      'ledger only. Live account reserve cannot be verified.', flush=True)
         # Live-balance check includes a 10% cushion on the next estimated charge.
         needed = (Decimal(reserve_credits) + Decimal(row['credits_estimate']) * Decimal('1.1')) * USD_PER_CREDIT
-        if available < needed:
+        if available is not None and available < needed:
             raise RuntimeError('Live API balance is too low to preserve the configured reserve. '
                                'Check that your 3,000 credits are API credits at the documented rate.')
-        entry = {'state': 'submitting', 'credits_estimate': row['credits_estimate']}
+        entry = {'state': 'submitting', 'credits_estimate': row['credits_estimate'],
+                 'balance_guard': 'live' if available is not None else 'unavailable_404'}
         ledger[key] = entry
         save()  # Durable reservation before the POST, including ambiguous outcomes.
         response = client.request('POST', '/task', json={
@@ -183,6 +201,8 @@ def main():
     parser.add_argument('--reserve-credits', type=int, default=1500)
     parser.add_argument('--allow-partial', action='store_true',
                         help='Match saved qualifying AI/human counts within each question, without generation')
+    parser.add_argument('--allow-missing-balance', action='store_true',
+                        help='Permit local estimated-credit limits if GET /balance returns 404 only')
     args = parser.parse_args()
     if min(args.max_credits, args.total_credits) <= 0 or not 0 <= args.reserve_credits < args.total_credits:
         parser.error('Invalid credit budget')
@@ -195,6 +215,7 @@ def main():
         ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
         plan = make_plan(rows, ledger, args.max_credits, args.total_credits, args.reserve_credits)
         plan['selection_policy'] = ('balanced_saved_answers_v1' if args.allow_partial else 'full_quota_v1')
+        plan['allow_missing_balance'] = args.allow_missing_balance
         output = Path(args.run) / 'pangram'
         write_json(output / 'plan.json', plan)
         write_jsonl(output / 'selection.jsonl', [
@@ -223,7 +244,8 @@ def main():
         write_json(old, fingerprint)
         try:
             for index, row in enumerate(rows, 1):
-                entry = process(row, ledger, lambda: save_ledger(ledger_path, ledger), client, args.reserve_credits)
+                entry = process(row, ledger, lambda: save_ledger(ledger_path, ledger), client,
+                                args.reserve_credits, allow_missing_balance=args.allow_missing_balance)
                 print(f"{index}/{len(rows)} {row['id']}: {entry['state']}", flush=True)
                 if entry['state'] == 'failed':
                     raise RuntimeError('Pangram task failed; saved response for inspection. No automatic paid retry.')

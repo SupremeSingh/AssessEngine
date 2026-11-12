@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from assessengine.pangram import credit_estimate, inputs, main, make_plan, process
+from assessengine.pangram import PangramHTTPError, credit_estimate, inputs, main, make_plan, process
 from assessengine.core import write_json, write_jsonl
 
 
@@ -117,6 +117,36 @@ class PangramTests(unittest.TestCase):
         process(row(), ledger, lambda: None, client)
         self.assertEqual(ledger['a']['state'], 'failed')
         self.assertEqual(client.posts, 1)
+
+    def test_missing_balance_requires_opt_in(self):
+        client = FakeClient()
+        with patch.object(client, 'balance', side_effect=PangramHTTPError(404, 'GET', '/balance')):
+            with self.assertRaises(PangramHTTPError):
+                process(row(), {}, lambda: None, client)
+        self.assertEqual(client.posts, 0)
+
+    def test_missing_balance_opt_in_only_accepts_balance_404(self):
+        client, ledger = FakeClient(), {}
+        with patch.object(client, 'balance', side_effect=PangramHTTPError(404, 'GET', '/balance')) as balance, \
+             contextlib.redirect_stdout(io.StringIO()):
+            process(row(), ledger, lambda: None, client, allow_missing_balance=True)
+            process(row(key='b'), ledger, lambda: None, client, allow_missing_balance=True)
+        self.assertEqual(balance.call_count, 1)
+        self.assertEqual(client.posts, 2)
+        self.assertEqual(ledger['a']['balance_guard'], 'unavailable_404')
+        for status, path in [(401, '/balance'), (403, '/balance'), (429, '/balance'),
+                             (500, '/balance'), (404, '/task')]:
+            blocked = FakeClient()
+            with patch.object(blocked, 'balance', side_effect=PangramHTTPError(status, 'GET', path)):
+                with self.assertRaises(PangramHTTPError):
+                    process(row(), {}, lambda: None, blocked, allow_missing_balance=True)
+            self.assertEqual(blocked.posts, 0)
+
+    def test_opt_in_still_enforces_live_balance_when_available(self):
+        client = FakeClient(balance='75.00')
+        with self.assertRaisesRegex(RuntimeError, 'balance is too low'):
+            process(row(), {}, lambda: None, client, allow_missing_balance=True)
+        self.assertEqual(client.posts, 0)
 
     def test_plan_never_constructs_api_client(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -116,6 +116,24 @@ python -m assessengine.pangram run
 
 ## Budget: 3,000 credits
 
+### Recovery when the balance API returns 404
+
+The cluster returned HTTP 404 for `GET /balance` before any text was submitted.
+This deployment may not expose the documented account endpoint. After pulling
+the fix, explicitly opt into local estimated-credit budgeting:
+
+```bash
+ALLOW_PARTIAL=1 ALLOW_MISSING_BALANCE=1 sbatch scripts/score.sbatch
+```
+
+This bypasses only a 404 from the balance read, not authentication errors,
+rate limits, other server failures, or an insufficient live balance when available.
+The 1,500 estimated-credit ceiling, shared ledger and duplicate-charge protections
+remain active. It cannot verify the actual account balance/reserve when that API
+is absent; check the Pangram dashboard and avoid other account usage. The current
+442-text preview estimates 503 credits. Reservations record which balance guard
+was used. Direct CLI equivalent: add `--allow-missing-balance --allow-partial`.
+
 Defaults cap the baseline at **1,500 estimated credits**, reserving **1,500**.
 Each unique text estimates `ceil(whitespace_words / 100)` credits, minimum one,
 at $0.05 per credit. Thus 80 words estimate one credit and 120 estimate two.

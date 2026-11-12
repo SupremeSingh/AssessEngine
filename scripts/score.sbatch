@@ -27,4 +27,7 @@ options=()
 if [[ "${ALLOW_PARTIAL:-0}" == "1" ]]; then
     options+=(--allow-partial)
 fi
+if [[ "${ALLOW_MISSING_BALANCE:-0}" == "1" ]]; then
+    options+=(--allow-missing-balance)
+fi
 .venv/bin/python -m assessengine.pangram run --run "${RUN_DIR:-runs/sas-balanced}" "${options[@]}"
