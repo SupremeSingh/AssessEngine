@@ -8,6 +8,7 @@ runs/
 logs/
 .env
 .env.pangram
+.env.gemini
 .secrets/
 sas-report-data.tar.gz
 *.key

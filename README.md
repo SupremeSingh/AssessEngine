@@ -12,6 +12,26 @@ most misses concentrated in the protein-synthesis question. It does not yet
 show that prompt changes improve detection or that results generalize to other
 questions and models. [Detailed experiment, tables, and limitations](experiments/001-snapjudge-sas-baseline.md).
 
+**Can meaning-preserving question edits make DeepSeek answers easier to detect?**
+
+Not tested yet. The next stage uses Gemini 3.1 Pro Preview to propose exactly
+one paper-informed rewrite for each of the five questions, keeping source context
+fixed. This is one shot: five calls total, no detector feedback or revision loop.
+Gemini records a task contract and self-check for each rewrite. We compare fresh answers to original versus modified questions using
+continuous detector decision scores as well as binary detection rates.
+
+[Gemini setup, instructions, validity checks, and run commands](experiments/002-gemini-question-edits.md).
+
+**Latest exploratory round:** Gemini now gets minimal instructions and no word
+limit, with freedom to elicit confused, mechanical or easily detected answers
+while retaining meaning. These edits require inspection; incorrectness is not
+the same as detectability. [Protocol and outputs](experiments/003-exploratory-question-rewrites.md).
+
+To test the latest saved rewrites on the cluster (100 new DeepSeek answers,
+then SnapJudge), follow the [rewrite evaluation commands](experiments/003-exploratory-question-rewrites.md#cluster-evaluation).
+The frozen rewrites are committed under `experiments/inputs/`; no Gemini key or
+repeat Gemini calls are needed. This uses separate data and run directories.
+
 ## Active workflow: SnapJudge (supersedes Pangram instructions below)
 
 Pangram API scoring is stopped. The default `scripts/score.sbatch` now uses

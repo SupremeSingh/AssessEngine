@@ -10,6 +10,7 @@ import sys
 
 from .core import digest, read_jsonl, write_json, write_jsonl
 from .selection import select_answers
+from .detector_scores import continuous_scores
 
 CLIENT_URL = 'https://nlplab.cs.duke.edu/snapjudge/batch/snapjudge_batch.py'
 MIN_WORDS = 50
@@ -93,7 +94,23 @@ def report(run):
             raise ValueError(f'Unexpected or duplicate result: {name}')
         by_file[name] = result
     joined = [{**row, 'snapjudge': by_file.get(row['file'])} for row in index]
+    for row in joined:
+        row['continuous_scores'] = None
+        if row['file']:
+            raw_path = output/'results_json'/(row['file']+'.json')
+            if raw_path.exists():
+                raw = json.loads(raw_path.read_text())
+                result = (raw.get('answer',{}).get('results') or [{}])[0]
+                row['continuous_scores'] = continuous_scores(result)
     write_jsonl(output / 'scores.jsonl', joined)
+    with (output/'continuous_scores.csv').open('w',newline='',encoding='utf-8') as stream:
+        fields = ['id','question_id','authorship','words','mean_generated_decision_margin',
+                  'mean_nonhuman_score','mean_generated_vs_polished_score','thr_nonhuman','thr_generated']
+        writer = csv.DictWriter(stream,fieldnames=fields)
+        writer.writeheader()
+        for row in joined:
+            values = {**row, **(row['continuous_scores'] or {})}
+            writer.writerow({k:values.get(k) for k in fields})
     summary = {'detector': 'SnapJudge', 'min_words': MIN_WORDS,
                'score_definition': 'Fraction of windows classified AI-generated, not authorship probability.',
                'warning': 'Eligible answers only. Length filtering changes the sample; '
@@ -118,6 +135,12 @@ def report(run):
             'verdicts': dict(Counter(r['verdict'] for r, _ in successful)),
             'mean_generated_window_share': (sum(s for _, s in successful) / len(successful)
                                              if successful else None)}
+        margins = [r['continuous_scores']['mean_generated_decision_margin'] for r in group if r['continuous_scores']]
+        summary[label]['continuous_scored'] = len(margins)
+        summary[label]['mean_generated_decision_margin'] = sum(margins)/len(margins) if margins else None
+    summary['continuous_score_note'] = ('Derived raw-logit decision margins are confidence proxies, not calibrated '
+        'probabilities. Compare using the same detector/thresholds. Mean window margins for multi-window texts '
+        'do not equal the document verdict rule.')
     write_json(output / 'report.json', summary)
     print(json.dumps(summary, indent=2))
 
